@@ -1,0 +1,11 @@
+Major Tasks to be done in this Project
+1. Finding Null Values
+2. Identifying Outliers
+3. Identifying Irrelevant Columns
+4. Filtering Out Null Values, Outliers, and Irrelevant Columns
+5. Visualizing the Changes Before and After Using Graphs
+6. Automating the Filtering and Detection Process Using Basic Methods and ML Models for Complex Data
+7. Automating the Detection of Data Complexity
+8. Creating a Method to Provide Suggestions
+9. Automating the Entire Process and Outputting Clean Data Ready for ML Training or Insight Generation
+10. Providing an Overview of the Process and Outcomes
