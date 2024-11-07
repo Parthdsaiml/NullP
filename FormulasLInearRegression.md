@@ -1,4 +1,4 @@
----
+
 
 ### **1. Linear Regression Equation**
 The linear regression model assumes the relationship between the independent variable \(x\) and the dependent variable \(y\) is linear:
