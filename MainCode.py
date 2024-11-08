@@ -85,470 +85,384 @@ usefullColumns = [
     'Customer Segment'
 ]
 
-def nullCheck(dataFrame):
-    totalNullsCombineColumns = dataFrame.isnull().sum().sum()
 
-    if (totalNullsCombineColumns != 0):
-        print("Total Nulls : ", totalNullsCombineColumns)
-        print("Null Count in Each Column")
-        return dataFrame.isnull().sum()
+    class NullCheck:
+    def __init__(self, df):
+        self.df = df.copy()  # Store a copy of the DataFrame
+        self.droppingColumns = []  # Initialize the list of columns to drop
+        self.outlier_detection = OutlierDetection(df)  # Initialize OutlierDetection class
+
         
-    print("No Null Values found")
-    # def deeperNull() to Be done
-    return None
-
-def skewCheck(column):
-    skewness = column.skew()
-    if (skewness < -0.5 or skewness > 0.5):
-        return True
-    else:
-        return False
-def replaceWithMode(df, column):
-    modeValue = df[column].mode()[0]  # Get the most frequent value
-    df[column] = df[column].fillna(modeValue)  # Avoid chained assignment
-    print(f"Replaced with Mode, Column = [{column}]")
-    return df
-
-def replaceWithMean(df, column):
-    meanValue = df[column].mean()
-    df[column] = df[column].fillna(meanValue)
-    print(f"Replaced with Mean, Column = [{column}]")
-    return df
-def replaceWithMedian(df, column):
-    medianValue = df[column].median()
-    df[column] = df[column].fillna(medianValue)  
-    print(f"Replaced with Median, Column = [{column}]")
-    return df
-
-
-def knnMethodNullReplacment(df, n_neighbors=5):
-    imputer = KNNImputer(n_neighbors=n_neighbors)
-    imputed_data = imputer.fit_transform(df)
-    imputed_df = pd.DataFrame(imputed_data, columns=df.columns)
-    return imputed_df
-
-
-def automateNullUpdate(dataFrame, n_neighbors=5, percentNull=0.4, dropColumns=True):
-    df_copy = dataFrame.copy()  # Avoid modifying the original DataFrame
-    droppingColumns = []  # Initialize the list for dropped columns
-
-    for column in df_copy.columns:
-        nullCount = df_copy[column].isnull().sum()
-        nullPercent = nullCount / len(df_copy[column])
-        
-        if nullPercent > percentNull:
-            droppingColumns.append(column)
-            continue
-            
-        if pd.api.types.is_numeric_dtype(df_copy[column]):
-            if booleanOutliers(df_copy, column):
-                df_copy[column] = replaceWithMedian(df_copy, column)
-        elif pd.api.types.is_string_dtype(df_copy[column]):
-            # Replace missing string values with mode
-            mode_value = df_copy[column].mode()[0]
-            df_copy[column].fillna(mode_value, inplace=True)
     
-    # Drop columns if specified
-    if dropColumns:
-        df_copy = df_copy.drop(columns=droppingColumns)
-        print(f"Dropped columns with high null values: {droppingColumns}")
-
-    # Apply KNN imputation for the entire DataFrame after handling outliers
-    imputed_df = knn_method_null_replacement(df_copy, n_neighbors)
-    return imputed_df
-
-def replacingSimplerDataNullValues(df, percentNull=0.4, dropColumns=True):
-    df_copy = df.copy()
-    droppingColumns = []
-
-    for column in df_copy.columns:
-        nullCount = df_copy[column].isnull().sum()
-        nullPercent = nullCount / len(df_copy[column])
+    # Null Check: Check for missing values and display summary
+    def nullCheck(self):
+        totalNullsCombineColumns = self.df.isnull().sum().sum()
+        if totalNullsCombineColumns != 0:
+            print("Total Nulls: ", totalNullsCombineColumns)
+            print("Null Count in Each Column:")
+            print(self.df.isnull().sum())
+        print("No Null Values found")
+        return None
+    def automateRemovingNullValues(self, threshold=0.1):
+        for column in self.df.columns:
+            # Skip large columns (more than 1 million entries)
+            if len(self.df[column]) > 1000000:
+                continue  # Need a better approach to handle very large columns
         
-        if nullPercent > percentNull:
-            droppingColumns.append(column)
-            continue
-        
-        if isCategorical(df_copy, column):
-            df_copy = replaceWithMode(df_copy, column)
-            continue
-        
-        if pd.api.types.is_numeric_dtype(df_copy[column]):
-            if skewCheck(df_copy[column]):
-                df_copy = replaceWithMedian(df_copy, column)
+        # Handle categorical columns (replace NaNs with Mode)
+            if isCategorical(self.df, column):
+                self.replaceWithMode(column)
             else:
-                outliers = columnStandardCountOutliers(df_copy[column])
-                if len(outliers) != 1 and outliers[0] == 0:
-                    df_copy = replaceWithMedian(df_copy, column)
+            # Check if the column is numeric (not categorical)
+                if pd.api.types.is_numeric_dtype(self.df[column]):
+                    if self.skewCheck(self.df[column]):
+                    # If the column is skewed, check for outliers using IQR or SD
+                        iqr_outliers = self.outlier_detection.iqrOutliers(self.df[column])
+                        sd_outliers = self.outlier_detection.sdOutliers(self.df[column])
+
+                    # If outliers are detected, use Mode to replace missing values
+                        if iqr_outliers or sd_outliers:
+                            self.replaceWithMode(column)
+                        else:
+                        # Replace with Median for skewed columns without outliers
+                            self.replaceWithMedian(column)
+                    else:
+                    # For non-skewed numeric columns, replace with Mean
+                        self.replaceWithMean(column)
                 else:
-                    df_copy = replaceWithMean(df_copy, column)
+                # Handle non-numeric columns
+                    self.replaceWithMode(column)
 
-    if dropColumns:
-        if droppingColumns:  # Only drop if there are columns to drop
-            df_copy = df_copy.drop(columns=droppingColumns)
-            print(f"Dropped columns with high null values: {droppingColumns}")
+    def skewCheck(self, column, skew_threshold=0.5, kurtosis_threshold=3.0):
+        if not pd.api.types.is_numeric_dtype(column):
+            return False
+        skewness = column.skew()
+        kurt = column.kurtosis()
+        skewed = abs(skewness) > skew_threshold
+        heavy_tailed = abs(kurt) > kurtosis_threshold
+        if skewed or heavy_tailed:
+            return True
         else:
-            print("No columns were dropped.")
+            return False
 
-    return df_copy  # Return the modified DataFrame
+    # Replace missing values with Mode (for categorical data)
+    def replaceWithMode(self, column):
+        modeValue = self.df[column].mode()[0]  # Get the most frequent value
+        self.df[column] = self.df[column].fillna(modeValue)
+        return self.df
 
-def isCategorical(df, column_name):
+    # Replace missing values with Mean (for numeric data)
+    def replaceWithMean(self, column):
+        meanValue = self.df[column].mean()
+        self.df[column] = self.df[column].fillna(meanValue)
+        return self.df
+
+    # Replace missing values with Median (for numeric data)
+    def replaceWithMedian(self, column):
+        medianValue = self.df[column].median()
+        self.df[column] = self.df[column].fillna(medianValue)
+        return self.df
+
+    # KNN Imputation Method for replacing missing values
+    def knnMethodNullReplacement(self, n_neighbors=5):
+        imputer = KNNImputer(n_neighbors=n_neighbors)
+        imputed_data = imputer.fit_transform(self.df)
+        imputed_df = pd.DataFrame(imputed_data, columns=self.df.columns)
+        return imputed_df
+
+    # Automate the process of handling missing values
+        
+    
+
+    # Check Linearity: Using OLS to check for linearity with the target column
+    # def check_linearity(self, target_column, graphs=False):
+    #     y = self.df[target_column]
+    #     X = self.df.drop(columns=[target_column])
+    #     X = sm.add_constant(X)
+    #     model = sm.OLS(y, X).fit()
+    #     r_squared = model.rsquared
+    #     p_values = model.pvalues
+    #     if r_squared < 0.5:  # Threshold for weak linearity
+    #         return False
+    #     if any(p_values > 0.05):  # Check for statistical significance of p-values
+    #         return False
+    #     if graphs:
+    #         residuals = model.resid
+    #         plt.figure(figsize=(8, 6))
+    #         sns.residplot(x=model.fittedvalues, y=residuals, lowess=True, line_kws={'color': 'red'})
+    #         plt.title('Residual Plot')
+    #         plt.xlabel('Fitted Values')
+    #         plt.ylabel('Residuals')
+    #         plt.show()
+    #     return True
+
+    # Replacing simpler data null values using Mode, Median, Mean or KNN
+    def replacingSimplerDataNullValues(self, percentNull=0.4, dropColumns=True):
+        for column in self.df.columns:
+            nullCount = self.df[column].isnull().sum()
+            nullPercent = nullCount / len(self.df[column])
+            
+            if nullPercent > percentNull:
+                self.droppingColumns.append(column)
+                continue
+
+            if pd.api.types.is_string_dtype(self.df[column]):
+                self.df = self.replaceWithMode(column)
+            elif pd.api.types.is_numeric_dtype(self.df[column]):
+                if self.skewCheck(self.df[column]):
+                    self.df = self.replaceWithMedian(column)
+                else:
+                    self.df = self.replaceWithMean(column)
+
+        # Drop columns if specified
+        if dropColumns:
+            if self.droppingColumns:
+                self.df = self.df.drop(columns=self.droppingColumns)
+                print(f"Dropped columns with high null values: {self.droppingColumns}")
+            else:
+                print("No columns were dropped.")
+        
+        return self.df
+    def visualizeMissingData(self, heatmap_color='viridis', save_fig=False, fig_prefix='missing_data'):
+        if self.df.empty:
+            print("DataFrame is empty.")
+            return
+        
+        # Create a boolean DataFrame for missing values (True = missing)
+        missing_data = self.df.isnull()
+        
+        # Heatmap of missing values
+        plt.figure(figsize=(12, 8))
+        sns.heatmap(missing_data, cmap=heatmap_color, cbar=False, yticklabels=False, xticklabels=self.df.columns)
+        plt.title('Missing Data Heatmap', fontsize=16)
+        plt.xlabel('Features', fontsize=14)
+        plt.ylabel('Observations', fontsize=14)
+        
+        # Save the figure if requested
+        if save_fig:
+            plt.savefig(f"{fig_prefix}_heatmap.png", bbox_inches='tight')
+        
+        plt.show()
+
+        # Bar chart showing the count of missing values per feature
+        missing_counts = self.df.isnull().sum()
+        
+        plt.figure(figsize=(10, 5))
+        missing_counts.plot(kind='bar', color='skyblue')
+        plt.title('Missing Values per Feature', fontsize=16)
+        plt.ylabel('Number of Missing Values', fontsize=14)
+        plt.xlabel('Features', fontsize=14)
+        plt.xticks(rotation=45)
+        
+        # Adding percentages to the bar chart
+        for index, value in enumerate(missing_counts):
+            plt.text(index, value, f'{value} ({value/len(self.df)*100:.1f}%)', ha='center', va='bottom')
+
+        # Save the figure if requested
+        if save_fig:
+            plt.savefig(f"{fig_prefix}_missing_counts.png", bbox_inches='tight')
+        
+        plt.show()
+
+
+
+def isCategorical(df, column_name, cardinality_threshold=0.1):
     dtype = df[column_name].dtype
-    return isinstance(dtype, pd.CategoricalDtype) or \
-           (pd.api.types.is_object_dtype(dtype) and len(df[column_name].unique()) < 0.1 * len(df))
-
-def visualizeMissingData(df, heatmap_color='viridis', save_fig=False, fig_prefix='missing_data'):
-    if df.empty:
-        print("DataFrame is empty.")
-        return
     
-    missing_data = df.isnull()
+    # Check if the column is already a pandas Categorical type
+    if isinstance(dtype, pd.CategoricalDtype):
+        return True
     
-    # Create the heatmap for the entire dataset
-    plt.figure(figsize=(12, 8))
-    sns.heatmap(missing_data, cmap=heatmap_color, cbar=False, yticklabels=False, xticklabels=df.columns)
-    plt.title('Missing Data Heatmap', fontsize=16)
-    plt.xlabel('Features', fontsize=14)
-    plt.ylabel('Observations', fontsize=14)
+    # Check if the column is of object dtype (i.e., strings or mixed types)
+    if pd.api.types.is_object_dtype(dtype):
+        unique_count = len(df[column_name].unique())
+        total_count = len(df)
+        
+        # Heuristic: if unique values are less than the cardinality threshold, consider it categorical
+        if unique_count < cardinality_threshold * total_count:
+            return True
+        
+    # Check for Boolean columns (often treated as categorical)
+    if pd.api.types.is_bool_dtype(dtype):
+        return True
     
-    if save_fig:
-        plt.savefig(f"{fig_prefix}_heatmap.png", bbox_inches='tight')
-    
-    plt.show()
-
-    # Count missing values per feature and plot as a bar chart
-    missing_counts = df.isnull().sum()
-    
-    plt.figure(figsize=(10, 5))
-    missing_counts.plot(kind='bar', color='skyblue')
-    plt.title('Missing Values per Feature', fontsize=16)
-    plt.ylabel('Number of Missing Values', fontsize=14)
-    plt.xlabel('Features', fontsize=14)
-    plt.xticks(rotation=45)
-    
-    # Add percentages to the bar chart
-    for index, value in enumerate(missing_counts):
-        plt.text(index, value, f'{value} ({value/len(df)*100:.1f}%)', ha='center', va='bottom')
-
-    if save_fig:
-        plt.savefig(f"{fig_prefix}_missing_counts.png", bbox_inches='tight')
-    
-    plt.show()
+    # If none of the above, return False
+    return False
 
 
 
-def isolation_forest_outliers(column, contamination=0.1):
-    # Reshape the column to fit the model
-    data = column.values.reshape(-1, 1)
-    iso_forest = IsolationForest(contamination=contamination, random_state=42)
-    outliers = iso_forest.fit_predict(data)
-    
-    # Return the indices of the outliers
-    return np.where(outliers == -1)[0].tolist()
 
 
-def getIQRRange(column, dynamicValue):
-    sortedData = np.sort(column)
-    length = len(sortedData)
-    
-    if len(sortedData) == 1:
-        Q1 = sortedData[0]
-        Q3 = sortedData[0]
-    elif len(sortedData) == 2:
-        Q1 = sortedData[0]
-        Q3 = sortedData[1]
-    else:
+class OutlierDetection:
+    def __init__(self, df):
+        self.df = df.copy()  # Make a copy of the DataFrame to avoid modifying original data
+
+    def isolation_forest_outliers(self, column, contamination=0.1):
+        """
+        Detect outliers using the Isolation Forest method.
+        """
+        data = column.values.reshape(-1, 1)
+        iso_forest = IsolationForest(contamination=contamination, random_state=42)
+        outliers = iso_forest.fit_predict(data)
+        return np.where(outliers == -1)[0].tolist()
+
+    def getIQRRange(self, column, dynamicValue):
+        """
+        Calculate the IQR (Interquartile Range) and dynamic range for outlier detection.
+        """
+        sortedData = np.sort(column)
+        if len(sortedData) <= 1:
+            return [sortedData[0], sortedData[0]]  # If only 1 or 0 elements, no IQR calculation
+
         Q1 = np.percentile(sortedData, 25)
         Q3 = np.percentile(sortedData, 75)
-    IQR = Q3 - Q1
-    if (dynamicValue != -1):
-        
-        lowerBound = Q1 - dynamicValue * IQR
-        upperBound = Q3 + dynamicValue * IQR
+        IQR = Q3 - Q1
+        lowerBound = Q1 - (dynamicValue if dynamicValue != -1 else 1.5) * IQR
+        upperBound = Q3 + (dynamicValue if dynamicValue != -1 else 1.5) * IQR
         return [lowerBound, upperBound]
-        
-    lowerBound = Q1 - 1.5 * IQR
-    upperBound = Q3 + 1.5 * IQR
-    return [lowerBound, upperBound]
-def iqrOutliers(column, valueDynamic):
-    iqrRange = getIQRRange(column, valueDynamic)
-    outlier_indices = []
-    for idx, value in enumerate(column):
-        if (value < iqrRange[0] or value > iqrRange[1]):
-            outlier_indices.append(idx)  # Append the index of the outlier
-    return outlier_indices
-def sdRange(column, dynamicValue):
-    meanValue = column.mean()
-    stdValue = column.std()
 
-    if (dynamicValue != -1):
-        lowerRange = meanValue - (dynamicValue * stdValue)
-        upperRange = meanValue + (dynamicValue * stdValue)
+    def iqrOutliers(self, column, valueDynamic=-1):
+        """
+        Identify outliers in a column based on IQR.
+        """
+        iqrRange = self.getIQRRange(column, valueDynamic)
+        outlier_indices = [idx for idx, value in enumerate(column) if value < iqrRange[0] or value > iqrRange[1]]
+        return outlier_indices
+
+    def sdRange(self, column, dynamicValue=-1):
+        """
+        Calculate the SD (Standard Deviation) range for outlier detection.
+        """
+        meanValue = column.mean()
+        stdValue = column.std()
+        lowerRange = meanValue - (dynamicValue if dynamicValue != -1 else 3) * stdValue
+        upperRange = meanValue + (dynamicValue if dynamicValue != -1 else 3) * stdValue
         return [lowerRange, upperRange]
-        
-    lowerRange = meanValue - (3 * stdValue)
-    upperRange = meanValue + (3 * stdValue)
-    return [lowerRange, upperRange]
-def sdOutliers(column, valueDynamic):
-    rangeSd = sdRange(column, valueDynamic)
-    outLierIndices = []
-    for idx, value in enumerate(column):
-        if (value < rangeSd[0] or value > rangeSd[1]):
-            outLierIndices.append(idx)
-    return outLierIndices
-def skewedDetection(dataFrame):
+
+    def sdOutliers(self, column, valueDynamic=-1):
+        """
+        Identify outliers in a column based on Standard Deviation.
+        """
+        rangeSd = self.sdRange(column, valueDynamic)
+        outlierIndices = [idx for idx, value in enumerate(column) if value < rangeSd[0] or value > rangeSd[1]]
+        return outlierIndices
+
+    def skewedDetection(self):
+        """
+        Detect skewed columns in the dataframe.
+        Returns a list of skewness values for numeric columns.
+        """
+        skewedList = []
+        for column in self.df.columns:
+            if pd.api.types.is_numeric_dtype(self.df[column]):
+                if self.df[column].nunique() < 5:  # Ignore very low cardinality columns
+                    skewedList.append(None)
+                    continue
+                skew_value = self.df[column].skew()
+                if skew_value > 0.5:
+                    skewedList.append(1)  # Right skewed
+                elif skew_value < -0.5:
+                    skewedList.append(-1)  # Left skewed
+                else:
+                    skewedList.append(0)  # Not skewed
+            else:
+                skewedList.append(None)  # For non-numeric columns
+        return skewedList
+
+    
+
+    def booleanOutliers(self, column, dynamicValue=-1):
+        """
+        Determine if there are any significant outliers based on the skewness and chosen method.
+        """
+        skewness = self.df[column].skew()
+        if abs(skewness) > 0.5:
+            outliers = self.iqrOutliers(self.df[column], dynamicValue)
+        else:
+            outliers = self.sdOutliers(self.df[column], dynamicValue)
+        return len(outliers) > 0  # Returns True if there are outliers, False otherwise
+
+    # Existing methods from the previous part would be here...
+
     
     
-    skewedList = []
-    skew = 0
-    for column in dataFrame.columns:
-        if pd.api.types.is_numeric_dtype(dataFrame[column]):
-            if (dataFrame[column].nunique() < 5):
-                skewedList.append(None)
+    def detectCategoricalOutliers(self, column_name, threshold_percent=1):
+        if column_name not in self.df.columns:
+            raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
+        column = self.df[column_name]
+        category_counts = column.value_counts()
+        threshold = len(column) * (threshold_percent / 100)
+        outliers = category_counts[category_counts < threshold]
+        return outliers.index.tolist(), outliers.values.tolist()  # Return categories and their counts
+
+    def detectAllOutliers(self):
+        allOutliers = {}
+
+        if pd.api.types.is_numeric_dtype(self.df[self.target_column]):
+            targetSkewness = self.df[self.target_column].skew()
+            if abs(targetSkewness) > 0.5:
+                targetOutliers = self.iqrOutliers(self.df[self.target_column])
+            else:
+                targetOutliers = self.sdOutliers(self.df[self.target_column])
+
+            if (len(targetOutliers) != 0):
+                allOutliers[self.target_column] = targetOutliers
+
+        else:
+            targetOuliers = self.detectCategoricalOutliers(target_column)
+            if (len(targetOutliers) != 0):
+                allOutliers[self.target_column] = targetOutliers
+
+        for column in self.df.columns:
+            if column == self.target_column:
                 continue
-            skew = dataFrame[column].skew()
-            if (skew > 0.5):
-                skewedList.append(1)
-            elif (skew < -0.5):
-                skewedList.append(-1)
-            else:
-                skewedList.append(0)
+            if pd.api.types.is_numeric_dtype(self.df[column]):
+                columnSkewness = self.df[column].skew()
+                if abs(columnSkewness) > 0.5:
+                    outliers = self.iqrOutliers(self.df[column])
+                else:
+                    outliers = self.sd.outliers(self.df[column])
+            elif (pd.api.types.is_object_dtype(self.df[column])):
+                outliers = self.detectCategoricalOutliers(column)
+                if (len(outliers) != 0):
+                    allOutliers[column] = outliers
+        return allOutliers
+
+        
+    def showOutliers(self, column, plot_type='boxplot'):
+        # Check if the column exists in the DataFrame
+        if column not in self.df.columns:
+            print(f"Column '{column}' does not exist in the DataFrame.")
+            return
+        
+        plt.figure(figsize=(8, 6))
+        
+        if plot_type == 'boxplot':
+            # Create a box plot
+            sns.boxplot(y=self.df[column])
+            plt.title(f'Box Plot of {column}')
+            plt.ylabel(column)
+
+        elif plot_type == 'scatter':
+            # Create a scatter plot
+            plt.scatter(self.df.index, self.df[column])
+            plt.title(f'Scatter Plot of {column}')
+            plt.ylabel(column)
+            plt.xlabel('Index')
+
+        elif plot_type == 'histogram':
+            # Create a histogram
+            sns.histplot(self.df[column], bins=30, kde=True)
+            plt.title(f'Histogram of {column}')
+            plt.xlabel(column)
+            plt.ylabel('Frequency')
+
         else:
-            skewedList.append(None)
-    return skewedList
-
+            print(f"Plot type '{plot_type}' is not supported.")
+            return
         
-            
+        plt.show()
 
-def countStandardOutliers(dataFrame):
-    method = input("Choose outlier detection method (1: IQR, 2: SD, 3: Isolation Forest): ")
-    dynamicConstant = []
-    if method == '3':
-        contamination = float(input("Enter contamination level for Isolation Forest (default 0.1): "))
-    
-    outliersResult = []
-    skewedContainer = skewedDetection(dataFrame)
-    i = 0
-    for column in dataFrame.columns:
-        if pd.api.types.is_numeric_dtype(dataFrame[column]):
-            if method == '3':
-                outliers = isolation_forest_outliers(dataFrame[column], contamination)
-                outliersResult.append([column, len(outliers)])
-            elif skewedContainer[i] == 1 or skewedContainer[i] == -1:
-                outliers = iqrOutliers(dataFrame[column], -1)
-                outliersResult.append([column, len(outliers)])
-            else:
-                outliers = sdOutliers(dataFrame[column], -1)
-                outliersResult.append([column, len(outliers)])
-        else:
-            outliersResult.append([column, None])  # Non-numeric columns
-        i += 1
-        
-    return outliersResult
-
-def booleanOutliers(dataFrame, column, dynamicValue = -1):
-    skewness = dataFrame[column].skew();
-    if (skewness < -0.5 or skewness > 0.5):
-        outliers = iqrOutliers(dataFrame[column], dynamicValue)
-    else:
-        outliers = sdOutliers(dataFrame[column], dynamicValue)
-    if (len(outliers) == 1 and outliers[0] == 0):
-        return False
-    else:
-        return True
-    
-def countOutliers(dataFrame):
-    method = input("Choose outlier detection method (1: IQR, 2: SD, 3: Isolation Forest): ")
-
-    # Initialize the list to hold constants if required
-    dynamicConstant = []
-    
-    # Ask for constants only if method is IQR or SD
-    if method in ['1', '2']:
-        print("Enter the Constant for Each Column if you want to change the strictness of IQR or SD method or -1 for default")
-        for column in dataFrame.columns:
-            value = float(input(f"{column}: "))
-            dynamicConstant.append(value)
-
-    outliersResult = []  # This will hold the results as a list of lists
-    skewedContainer = skewedDetection(dataFrame)
-    i = 0
-    
-    for column in dataFrame.columns:
-        if pd.api.types.is_numeric_dtype(dataFrame[column]):
-            if method == '1':  # IQR
-                outliers = iqrOutliers(dataFrame[column], dynamicConstant[i] if dynamicConstant else -1)
-                outliersResult.append([column, len(outliers)])
-            elif method == '2':  # SD
-                outliers = sdOutliers(dataFrame[column], dynamicConstant[i] if dynamicConstant else -1)
-                outliersResult.append([column, len(outliers)])
-            elif method == '3':  # Isolation Forest
-                contamination = float(input("Enter contamination level for Isolation Forest (default 0.1): "))
-                outliers = isolation_forest_outliers(dataFrame[column], contamination)
-                outliersResult.append([column, len(outliers)])
-                
-        else:
-            outliersResult.append([column, None])  # Non-numeric columns can be handled as needed
-        i += 1
-        
-    return outliersResult
-
-def detectStandardOutliers(dataFrame):
-    method = input("Choose outlier detection method (1: IQR, 2: SD, 3: Isolation Forest): ")
-    dynamicConstant = []
-    if method == '3':
-        contamination = float(input("Enter contamination level for Isolation Forest (default 0.1): "))
-    
-    outliersResult = []
-    skewedContainer = skewedDetection(dataFrame)
-    i = 0
-    for column in dataFrame.columns:
-        if pd.api.types.is_numeric_dtype(dataFrame[column]):
-            if method == '3':
-                outliers = isolation_forest_outliers(dataFrame[column], contamination)
-                outliersResult.append([column, len(outliers), outliers])
-            elif skewedContainer[i] == 1 or skewedContainer[i] == -1:
-                outliers = iqrOutliers(dataFrame[column], -1)
-                outliersResult.append([column, len(outliers), outliers])
-            else:
-                outliers = sdOutliers(dataFrame[column], -1)
-                outliersResult.append([column, len(outliers), outliers])
-        else:
-            outliersResult.append([column, None])  # Non-numeric columns
-        i += 1
-        
-    return outliersResult
-
-
-def detectOutliers(dataFrame):
-    method = input("Choose outlier detection method (1: IQR, 2: SD, 3: Isolation Forest): ")
-
-    # Initialize the list to hold constants if required
-    dynamicConstant = []
-    
-    # Ask for constants only if method is IQR or SD
-    if method in ['1', '2']:
-        print("Enter the Constant for Each Column if you want to change the strictness of IQR or SD method or -1 for default")
-        for column in dataFrame.columns:
-            value = float(input(f"{column}: "))
-            dynamicConstant.append(value)
-
-    outliersResult = []  # This will hold the results as a list of lists
-    skewedContainer = skewedDetection(dataFrame)
-    i = 0
-    
-    for column in dataFrame.columns:
-        if pd.api.types.is_numeric_dtype(dataFrame[column]):
-            if method == '1':  # IQR
-                outliers = iqrOutliers(dataFrame[column], dynamicConstant[i] if dynamicConstant else -1)
-                outliersResult.append([column, len(outliers), outliers])
-            elif method == '2':  # SD
-                outliers = sdOutliers(dataFrame[column], dynamicConstant[i] if dynamicConstant else -1)
-                outliersResult.append([column, len(outliers), outliers])
-            elif method == '3':  # Isolation Forest
-                contamination = float(input("Enter contamination level for Isolation Forest (default 0.1): "))
-                outliers = isolation_forest_outliers(dataFrame[column], contamination)
-                outliersResult.append([column, len(outliers), outliers])
-                
-        else:
-            outliersResult.append([column, None])  # Non-numeric columns can be handled as needed
-        i += 1
-        
-    return outliersResult
-
-def showOutliers(dataFrame, column, plot_type='boxplot'):
-    # Check if the column exists in the DataFrame
-    if column not in dataFrame.columns:
-        print(f"Column '{column}' does not exist in the DataFrame.")
-        return
-    
-    plt.figure(figsize=(8, 6))
-    
-    if plot_type == 'boxplot':
-        # Create a box plot
-        sns.boxplot(y=dataFrame[column])
-        plt.title(f'Box Plot of {column}')
-        plt.ylabel(column)
-
-    elif plot_type == 'scatter':
-        # Create a scatter plot
-        plt.scatter(dataFrame.index, dataFrame[column])
-        plt.title(f'Scatter Plot of {column}')
-        plt.ylabel(column)
-        plt.xlabel('Index')
-
-    elif plot_type == 'histogram':
-        # Create a histogram
-        sns.histplot(dataFrame[column], bins=30, kde=True)
-        plt.title(f'Histogram of {column}')
-        plt.xlabel(column)
-        plt.ylabel('Frequency')
-
-    else:
-        print(f"Plot type '{plot_type}' is not supported.")
-        return
-    
-    plt.show()
-
-    
-    
-def columnStandardCountOutliers(column):
-    if pd.api.types.is_numeric_dtype(column) == False:
-        return None
-    skew = column.skew()
-    outLiersList = []
-    if (skew < -0.5 or skew > 0.5):
-        outliers = iqrOutliers(column, -1)
-        outLiersList.append(len(outliers)) 
-    else:
-        outliers = sdOutliers(column, -1)
-        outLiersList.append(len(outliers)) 
-        
-    return outLiersList
-def columnCountOutliers(column):
-    if pd.api.types.is_numeric_dtype(column) == False:
-        return None
-    dynamicConstant = float(input("Enter the Constant for IQR or SD default is -1"))
-    skew = column.skew()
-    outLiersList = []
-    if (skew < -0.5 or skew > 0.5):
-        outliers = iqrOutliers(column, dynamicConstant)
-        outLiersList.append(len(outliers)) 
-    else:
-        outliers = sdOutliers(column, dynamicConstant)
-        outLiersList.append(len(outliers)) 
-        
-    return outLiersList
-
-def columnStandardGetOutliers(dataFrame, column):
-    if pd.api.types.is_numeric_dtype(column) == False:
-        return None
-    
-    skew = column.skew()
-    if (skew < -0.5 or skew > 0.5):
-        outliers = iqrOutliers(column, -1)
-    else:
-        outliers = sdOutliers(column, -1)
-    # Create a DataFrame with the specified rows
-    selected_df = dataFrame.iloc[outliers]
-    
-
-    return selected_df
-def columnGetOutliers(dataFrame, column):
-    if pd.api.types.is_numeric_dtype(column) == False:
-        return None
-    dynamicConstant = float(input("Enter the Constant for IQR or SD default is -1"))
-    
-    skew = column.skew()
-    if (skew < -0.5 or skew > 0.5):
-        outliers = iqrOutliers(column, dynamicConstant)
-    else:
-        outliers = sdOutliers(column, dynamicConstant)
-    # Create a DataFrame with the specified rows
-    selected_df = dataFrame.iloc[outliers]
-    
-
-    return selected_df
 
 
 def getVariability(df, column, threshold = 0.1):
