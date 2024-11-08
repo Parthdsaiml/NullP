@@ -86,27 +86,58 @@ usefullColumns = [
 ]
 
 
-class NullCheck:
+    class NullCheck:
     def __init__(self, df):
         self.df = df.copy()  # Store a copy of the DataFrame
         self.droppingColumns = []  # Initialize the list of columns to drop
+        self.outlier_detection = OutlierDetection(df)  # Initialize OutlierDetection class
 
+        
+    
     # Null Check: Check for missing values and display summary
     def nullCheck(self):
         totalNullsCombineColumns = self.df.isnull().sum().sum()
         if totalNullsCombineColumns != 0:
             print("Total Nulls: ", totalNullsCombineColumns)
             print("Null Count in Each Column:")
-            return self.df.isnull().sum()
+            print(self.df.isnull().sum())
         print("No Null Values found")
         return None
+    def automateRemovingNullValues(self, threshold=0.1):
+        for column in self.df.columns:
+            # Skip large columns (more than 1 million entries)
+            if len(self.df[column]) > 1000000:
+                continue  # Need a better approach to handle very large columns
+        
+        # Handle categorical columns (replace NaNs with Mode)
+            if isCategorical(self.df, column):
+                self.replaceWithMode(column)
+            else:
+            # Check if the column is numeric (not categorical)
+                if pd.api.types.is_numeric_dtype(self.df[column]):
+                    if self.skewCheck(self.df[column]):
+                    # If the column is skewed, check for outliers using IQR or SD
+                        iqr_outliers = self.outlier_detection.iqrOutliers(self.df[column])
+                        sd_outliers = self.outlier_detection.sdOutliers(self.df[column])
 
-    # Skewness and Kurtosis Check: Detect if the column has skewness or heavy tails
+                    # If outliers are detected, use Mode to replace missing values
+                        if iqr_outliers or sd_outliers:
+                            self.replaceWithMode(column)
+                        else:
+                        # Replace with Median for skewed columns without outliers
+                            self.replaceWithMedian(column)
+                    else:
+                    # For non-skewed numeric columns, replace with Mean
+                        self.replaceWithMean(column)
+                else:
+                # Handle non-numeric columns
+                    self.replaceWithMode(column)
+
     def skewCheck(self, column, skew_threshold=0.5, kurtosis_threshold=3.0):
         if not pd.api.types.is_numeric_dtype(column):
             return False
         skewness = column.skew()
-        kurt = kurtosis(column)
+        kurt = column.kurtosis()
         skewed = abs(skewness) > skew_threshold
         heavy_tailed = abs(kurt) > kurtosis_threshold
         if skewed or heavy_tailed:
@@ -118,21 +149,18 @@ class NullCheck:
     def replaceWithMode(self, column):
         modeValue = self.df[column].mode()[0]  # Get the most frequent value
         self.df[column] = self.df[column].fillna(modeValue)
-        print(f"Replaced with Mode, Column = [{column}]")
         return self.df
 
     # Replace missing values with Mean (for numeric data)
     def replaceWithMean(self, column):
         meanValue = self.df[column].mean()
         self.df[column] = self.df[column].fillna(meanValue)
-        print(f"Replaced with Mean, Column = [{column}]")
         return self.df
 
     # Replace missing values with Median (for numeric data)
     def replaceWithMedian(self, column):
         medianValue = self.df[column].median()
         self.df[column] = self.df[column].fillna(medianValue)
-        print(f"Replaced with Median, Column = [{column}]")
         return self.df
 
     # KNN Imputation Method for replacing missing values
@@ -143,56 +171,30 @@ class NullCheck:
         return imputed_df
 
     # Automate the process of handling missing values
-    def automateNullUpdate(self, n_neighbors=5, percentNull=0.4, dropColumns=True):
-        # Loop through each column and handle missing values
-        for column in self.df.columns:
-            nullCount = self.df[column].isnull().sum()
-            nullPercent = nullCount / len(self.df[column])
-            
-            if nullPercent > percentNull:
-                self.droppingColumns.append(column)
-                continue
-            
-            if pd.api.types.is_numeric_dtype(self.df[column]):
-                if self.skewCheck(self.df[column]):
-                    self.df = self.replaceWithMedian(column)
-                else:
-                    # Handle outliers here if needed
-                    self.df = self.replaceWithMean(column)
-            elif pd.api.types.is_string_dtype(self.df[column]):
-                # Replace missing string values with mode
-                self.df[column].fillna(self.df[column].mode()[0], inplace=True)
         
-        # Drop columns with high null values if specified
-        if dropColumns:
-            self.df = self.df.drop(columns=self.droppingColumns)
-            print(f"Dropped columns with high null values: {self.droppingColumns}")
-        
-        # Apply KNN imputation for the entire DataFrame
-        self.df = self.knnMethodNullReplacement(n_neighbors)
-        return self.df
+    
 
     # Check Linearity: Using OLS to check for linearity with the target column
-    def check_linearity(self, target_column, graphs=False):
-        y = self.df[target_column]
-        X = self.df.drop(columns=[target_column])
-        X = sm.add_constant(X)
-        model = sm.OLS(y, X).fit()
-        r_squared = model.rsquared
-        p_values = model.pvalues
-        if r_squared < 0.5:  # Threshold for weak linearity
-            return False
-        if any(p_values > 0.05):  # Check for statistical significance of p-values
-            return False
-        if graphs:
-            residuals = model.resid
-            plt.figure(figsize=(8, 6))
-            sns.residplot(x=model.fittedvalues, y=residuals, lowess=True, line_kws={'color': 'red'})
-            plt.title('Residual Plot')
-            plt.xlabel('Fitted Values')
-            plt.ylabel('Residuals')
-            plt.show()
-        return True
+    # def check_linearity(self, target_column, graphs=False):
+    #     y = self.df[target_column]
+    #     X = self.df.drop(columns=[target_column])
+    #     X = sm.add_constant(X)
+    #     model = sm.OLS(y, X).fit()
+    #     r_squared = model.rsquared
+    #     p_values = model.pvalues
+    #     if r_squared < 0.5:  # Threshold for weak linearity
+    #         return False
+    #     if any(p_values > 0.05):  # Check for statistical significance of p-values
+    #         return False
+    #     if graphs:
+    #         residuals = model.resid
+    #         plt.figure(figsize=(8, 6))
+    #         sns.residplot(x=model.fittedvalues, y=residuals, lowess=True, line_kws={'color': 'red'})
+    #         plt.title('Residual Plot')
+    #         plt.xlabel('Fitted Values')
+    #         plt.ylabel('Residuals')
+    #         plt.show()
+    #     return True
 
     # Replacing simpler data null values using Mode, Median, Mean or KNN
     def replacingSimplerDataNullValues(self, percentNull=0.4, dropColumns=True):
@@ -264,10 +266,29 @@ class NullCheck:
 
 
 
-def isCategorical(df, column_name):
+def isCategorical(df, column_name, cardinality_threshold=0.1):
     dtype = df[column_name].dtype
-    return isinstance(dtype, pd.CategoricalDtype) or \
-           (pd.api.types.is_object_dtype(dtype) and len(df[column_name].unique()) < 0.1 * len(df))
+    
+    # Check if the column is already a pandas Categorical type
+    if isinstance(dtype, pd.CategoricalDtype):
+        return True
+    
+    # Check if the column is of object dtype (i.e., strings or mixed types)
+    if pd.api.types.is_object_dtype(dtype):
+        unique_count = len(df[column_name].unique())
+        total_count = len(df)
+        
+        # Heuristic: if unique values are less than the cardinality threshold, consider it categorical
+        if unique_count < cardinality_threshold * total_count:
+            return True
+        
+    # Check for Boolean columns (often treated as categorical)
+    if pd.api.types.is_bool_dtype(dtype):
+        return True
+    
+    # If none of the above, return False
+    return False
+
 
 
 
@@ -444,34 +465,49 @@ class OutlierDetection:
         
         return outliersResult
 
-    def detectOutliers(self):
-        method = input("Choose outlier detection method (1: IQR, 2: SD, 3: Isolation Forest): ")
-        dynamicConstant = []
-        if method in ['1', '2']:
-            print("Enter the Constant for Each Column if you want to change the strictness of IQR or SD method or -1 for default")
-            for column in self.df.columns:
-                value = float(input(f"{column}: "))
-                dynamicConstant.append(value)
-        outliersResult = []  # This will hold the results as a list of lists
-        skewedContainer = self.skewedDetection()
-        i = 0
-        for column in self.df.columns:
-            if pd.api.types.is_numeric_dtype(self.df[column]):
-                if method == '1':  # IQR
-                    outliers = self.iqrOutliers(self.df[column], dynamicConstant[i] if dynamicConstant else -1)
-                    outliersResult.append([column, len(outliers), outliers])
-                elif method == '2':  # SD
-                    outliers = self.sdOutliers(self.df[column], dynamicConstant[i] if dynamicConstant else -1)
-                    outliersResult.append([column, len(outliers), outliers])
-                elif method == '3':  # Isolation Forest
-                    contamination = float(input("Enter contamination level for Isolation Forest (default 0.1): "))
-                    outliers = self.isolation_forest_outliers(self.df[column], contamination)
-                    outliersResult.append([column, len(outliers), outliers])
-            else:
-                outliersResult.append([column, None])  # Non-numeric columns can be handled as needed
-            i += 1
-        return outliersResult
+    def detectCategoricalOutliers(self, column_name, threshold_percent=1):
+        if column_name not in self.df.columns:
+            raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
+        column = self.df[column_name]
+        category_counts = column.value_counts()
+        threshold = len(column) * (threshold_percent / 100)
+        outliers = category_counts[category_counts < threshold]
+        return outliers.index.tolist(), outliers.values.tolist()  # Return categories and their counts
 
+    def detectAllOutliers(self):
+        allOutliers = {}
+
+        if pd.api.types.is_numeric_dtype(self.df[self.target_column]):
+            targetSkewness = self.df[self.target_column].skew()
+            if abs(targetSkewness) > 0.5:
+                targetOutliers = self.iqrOutliers(self.df[self.target_column])
+            else:
+                targetOutliers = self.sdOutliers(self.df[self.target_column])
+
+            if (len(targetOutliers) != 0):
+                allOutliers[self.target_column] = targetOutliers
+
+        else:
+            targetOuliers = self.detectCategoricalOutliers(target_column)
+            if (len(targetOutliers) != 0):
+                allOutliers[self.target_column] = targetOutliers
+
+        for column in self.df.columns:
+            if column == self.target_column:
+                continue
+            if pd.api.types.is_numeric_dtype(self.df[column]):
+                columnSkewness = self.df[column].skew()
+                if abs(columnSkewness) > 0.5:
+                    outliers = self.iqrOutliers(self.df[column])
+                else:
+                    outliers = self.sd.outliers(self.df[column])
+            elif (pd.api.types.is_object_dtype(self.df[column])):
+                outliers = self.detectCategoricalOutliers(column)
+                if (len(outliers) != 0):
+                    allOutliers[column] = outliers
+        return allOutliers
+
+        
     def showOutliers(self, column, plot_type='boxplot'):
         # Check if the column exists in the DataFrame
         if column not in self.df.columns:
