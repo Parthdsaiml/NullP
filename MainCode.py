@@ -369,26 +369,7 @@ class OutlierDetection:
                 skewedList.append(None)  # For non-numeric columns
         return skewedList
 
-    def countStandardOutliers(self, method='1', contamination=0.1):
-        """
-        Count the number of outliers in the dataframe using different methods: IQR, SD, Isolation Forest.
-        """
-        outliersResult = []
-        skewedContainer = self.skewedDetection()
-        for i, column in enumerate(self.df.columns):
-            if pd.api.types.is_numeric_dtype(self.df[column]):
-                if method == '3':  # Isolation Forest
-                    outliers = self.isolation_forest_outliers(self.df[column], contamination)
-                    outliersResult.append([column, len(outliers)])
-                elif skewedContainer[i] in [1, -1]:  # Skewed data
-                    outliers = self.iqrOutliers(self.df[column])
-                    outliersResult.append([column, len(outliers)])
-                else:  # Non-skewed data
-                    outliers = self.sdOutliers(self.df[column])
-                    outliersResult.append([column, len(outliers)])
-            else:
-                outliersResult.append([column, None])  # For non-numeric columns
-        return outliersResult
+    
 
     def booleanOutliers(self, column, dynamicValue=-1):
         """
@@ -403,68 +384,8 @@ class OutlierDetection:
 
     # Existing methods from the previous part would be here...
 
-    def countOutliers(self):
-        method = input("Choose outlier detection method (1: IQR, 2: SD, 3: Isolation Forest): ")
-
-        # Initialize the list to hold constants if required
-        dynamicConstant = []
-        
-        # Ask for constants only if method is IQR or SD
-        if method in ['1', '2']:
-            print("Enter the Constant for Each Column if you want to change the strictness of IQR or SD method or -1 for default")
-            for column in self.df.columns:
-                value = float(input(f"{column}: "))
-                dynamicConstant.append(value)
-
-        outliersResult = []  # This will hold the results as a list of lists
-        skewedContainer = self.skewedDetection()
-        i = 0
-        
-        for column in self.df.columns:
-            if pd.api.types.is_numeric_dtype(self.df[column]):
-                if method == '1':  # IQR
-                    outliers = self.iqrOutliers(self.df[column], dynamicConstant[i] if dynamicConstant else -1)
-                    outliersResult.append([column, len(outliers)])
-                elif method == '2':  # SD
-                    outliers = self.sdOutliers(self.df[column], dynamicConstant[i] if dynamicConstant else -1)
-                    outliersResult.append([column, len(outliers)])
-                elif method == '3':  # Isolation Forest
-                    contamination = float(input("Enter contamination level for Isolation Forest (default 0.1): "))
-                    outliers = self.isolation_forest_outliers(self.df[column], contamination)
-                    outliersResult.append([column, len(outliers)])
-                
-            else:
-                outliersResult.append([column, None])  # Non-numeric columns can be handled as needed
-            i += 1
-        
-        return outliersResult
-
-    def detectStandardOutliers(self):
-        method = input("Choose outlier detection method (1: IQR, 2: SD, 3: Isolation Forest): ")
-        dynamicConstant = []
-        if method == '3':
-            contamination = float(input("Enter contamination level for Isolation Forest (default 0.1): "))
-        
-        outliersResult = []
-        skewedContainer = self.skewedDetection()
-        i = 0
-        for column in self.df.columns:
-            if pd.api.types.is_numeric_dtype(self.df[column]):
-                if method == '3':
-                    outliers = self.isolation_forest_outliers(self.df[column], contamination)
-                    outliersResult.append([column, len(outliers), outliers])
-                elif skewedContainer[i] == 1 or skewedContainer[i] == -1:
-                    outliers = self.iqrOutliers(self.df[column], -1)
-                    outliersResult.append([column, len(outliers), outliers])
-                else:
-                    outliers = self.sdOutliers(self.df[column], -1)
-                    outliersResult.append([column, len(outliers), outliers])
-            else:
-                outliersResult.append([column, None])  # Non-numeric columns
-            i += 1
-        
-        return outliersResult
-
+    
+    
     def detectCategoricalOutliers(self, column_name, threshold_percent=1):
         if column_name not in self.df.columns:
             raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
@@ -541,60 +462,6 @@ class OutlierDetection:
             return
         
         plt.show()
-
-    def columnCountOutliers(self, column):
-        if pd.api.types.is_numeric_dtype(column) == False:
-            return None
-        dynamicConstant = float(input("Enter the Constant for IQR or SD default is -1"))
-        skew = column.skew()
-        outLiersList = []
-        if (skew < -0.5 or skew > 0.5):
-            outliers = self.iqrOutliers(column, dynamicConstant)
-            outLiersList.append(len(outliers)) 
-        else:
-            outliers = self.sdOutliers(column, dynamicConstant)
-            outLiersList.append(len(outliers)) 
-        
-        return outLiersList
-
-    def columnStandardGetOutliers(self, column):
-        if pd.api.types.is_numeric_dtype(column) == False:
-            return None
-        
-        skew = column.skew()
-        if (skew < -0.5 or skew > 0.5):
-            outliers = self.iqrOutliers(column, -1)
-        else:
-            outliers = self.sdOutliers(column, -1)
-        # Create a DataFrame with the specified rows
-        selected_df = self.df.iloc[outliers]
-        
-        return selected_df
-
-    def isolation_forest_outliers(self, column, contamination=0.1):
-        # Reshape the column to fit the model
-        data = column.values.reshape(-1, 1)
-        iso_forest = IsolationForest(contamination=contamination, random_state=42)
-        outliers = iso_forest.fit_predict(data)
-        
-        # Return the indices of the outliers
-        return np.where(outliers == -1)[0].tolist()
-
-    def columnGetOutliers(self, column):
-        if pd.api.types.is_numeric_dtype(self.df[column]) == False:
-            return None
-        dynamicConstant = float(input("Enter the Constant for IQR or SD default is -1"))
-        
-        skew = self.df[column].skew()
-        if (skew < -0.5 or skew > 0.5):
-            outliers = self.iqrOutliers(self.df[column], dynamicConstant)
-        else:
-            outliers = self.sdOutliers(self.df[column], dynamicConstant)
-        
-        # Create a DataFrame with the specified rows
-        selected_df = self.df.iloc[outliers]
-        
-        return selected_df
 
 
 
