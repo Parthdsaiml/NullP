@@ -294,9 +294,10 @@ def isCategorical(df, column_name, cardinality_threshold=0.1):
 
 
 class OutlierDetection:
-    def __init__(self, df):
+    def __init__(self, df, target_column):
         self.df = df.copy()  # Make a copy of the DataFrame to avoid modifying original data
-
+        self.target_column = target_column
+        
     def isolation_forest_outliers(self, column, contamination=0.1):
         """
         Detect outliers using the Isolation Forest method.
@@ -306,7 +307,8 @@ class OutlierDetection:
         outliers = iso_forest.fit_predict(data)
         return np.where(outliers == -1)[0].tolist()
 
-    def getIQRRange(self, column, dynamicValue):
+    
+    def getIQRRange(self, column, dynamicValue = -1):
         """
         Calculate the IQR (Interquartile Range) and dynamic range for outlier detection.
         """
@@ -347,6 +349,11 @@ class OutlierDetection:
         outlierIndices = [idx for idx, value in enumerate(column) if value < rangeSd[0] or value > rangeSd[1]]
         return outlierIndices
 
+
+
+
+    
+
     def skewedDetection(self):
         """
         Detect skewed columns in the dataframe.
@@ -369,67 +376,45 @@ class OutlierDetection:
                 skewedList.append(None)  # For non-numeric columns
         return skewedList
 
-    
-
-    def booleanOutliers(self, column, dynamicValue=-1):
-        """
-        Determine if there are any significant outliers based on the skewness and chosen method.
-        """
-        skewness = self.df[column].skew()
-        if abs(skewness) > 0.5:
-            outliers = self.iqrOutliers(self.df[column], dynamicValue)
-        else:
-            outliers = self.sdOutliers(self.df[column], dynamicValue)
-        return len(outliers) > 0  # Returns True if there are outliers, False otherwise
+    # Returns True if there are outliers, False otherwise
 
     # Existing methods from the previous part would be here...
 
+
+
+    def showOutliers(self, plot_type="boxplot"):
+    # Ensure plot_type is a string and is valid
+        if not isinstance(plot_type, str):
+            raise ValueError("plot_type must be a string")
+
+        if plot_type not in ["boxplot", "scatter", "histogram"]:
+            raise ValueError(f"Invalid plot_type: {plot_type}. Supported plot types are ['boxplot'].")
     
-    
-    def detectCategoricalOutliers(self, column_name, threshold_percent=1):
-        if column_name not in self.df.columns:
-            raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
-        column = self.df[column_name]
-        category_counts = column.value_counts()
-        threshold = len(column) * (threshold_percent / 100)
-        outliers = category_counts[category_counts < threshold]
-        return outliers.index.tolist(), outliers.values.tolist()  # Return categories and their counts
-
-    def detectAllOutliers(self):
-        allOutliers = {}
-
-        if pd.api.types.is_numeric_dtype(self.df[self.target_column]):
-            targetSkewness = self.df[self.target_column].skew()
-            if abs(targetSkewness) > 0.5:
-                targetOutliers = self.iqrOutliers(self.df[self.target_column])
-            else:
-                targetOutliers = self.sdOutliers(self.df[self.target_column])
-
-            if (len(targetOutliers) != 0):
-                allOutliers[self.target_column] = targetOutliers
-
-        else:
-            targetOuliers = self.detectCategoricalOutliers(target_column)
-            if (len(targetOutliers) != 0):
-                allOutliers[self.target_column] = targetOutliers
-
         for column in self.df.columns:
-            if column == self.target_column:
-                continue
-            if pd.api.types.is_numeric_dtype(self.df[column]):
-                columnSkewness = self.df[column].skew()
-                if abs(columnSkewness) > 0.5:
-                    outliers = self.iqrOutliers(self.df[column])
-                else:
-                    outliers = self.sd.outliers(self.df[column])
-            elif (pd.api.types.is_object_dtype(self.df[column])):
-                outliers = self.detectCategoricalOutliers(column)
-                if (len(outliers) != 0):
-                    allOutliers[column] = outliers
-        return allOutliers
+        # Only plot numeric columns
+            if self.df[column].dtype in ['float64', 'int64']:
+                plt.figure(figsize=(5, 3))
 
-        
-    def showOutliers(self, column, plot_type='boxplot'):
+                if plot_type == "boxplot":
+                    sns.boxplot(y=self.df[column])
+                    plt.title(f"Box Plot of {column}")
+                    plt.ylabel(column)  # Fixed the typo here
+                elif plot_type == 'scatter':
+                    plt.scatter(self.df.index, self.df[column])
+                    plt.title(f'Scatter Plot of {column}')
+                    plt.ylabel(column)
+                    plt.xlabel('Index')
+                elif plot_type == 'histogram':
+                    sns.histplot(self.df[column], bins=30, kde=True)
+                    plt.title(f'Histogram of {column}')
+                    plt.xlabel(column)
+                    plt.ylabel('Frequency')
+                
+                plt.show()
+
+
+            
+    def showColumnOutliers(self, column, plot_type='boxplot'):
         # Check if the column exists in the DataFrame
         if column not in self.df.columns:
             print(f"Column '{column}' does not exist in the DataFrame.")
@@ -462,7 +447,240 @@ class OutlierDetection:
             return
         
         plt.show()
+    
 
+    def detectOutliers(self, count=False):
+        all_outliers = {}
+
+        # Iterate over all columns
+        for column in self.df.columns:
+            # Skip non-numeric columns
+            if not pd.api.types.is_numeric_dtype(self.df[column]):
+                continue
+
+            # Drop missing values for outlier detection
+            data = self.df[column].dropna()
+
+            # Skip columns with constant values (no variance)
+            if data.nunique() == 1:
+                continue
+
+            # Calculate IQR for the column
+            Q1 = data.quantile(0.25)
+            Q3 = data.quantile(0.75)
+            IQR = Q3 - Q1
+
+            # Define the bounds for outliers (1.5 * IQR rule)
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+
+            # Identify the outliers in the column
+            outliers = data[(data < lower_bound) | (data > upper_bound)]
+
+            # If outliers exist, store either the count or the list of outliers
+            if not outliers.empty:
+                if count:
+                    all_outliers[column] = len(outliers)  # Store count of outliers
+                else:
+                    all_outliers[column] = outliers.tolist()  # Store list of outliers
+
+        return all_outliers
+
+
+   
+
+
+
+
+
+
+        
+    def detectCategoricalOutliers(self, column_name, threshold_percent=1):
+        if column_name not in self.df.columns:
+            raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
+        column = self.df[column_name]
+        category_counts = column.value_counts()
+        threshold = len(column) * (threshold_percent / 100)
+        outliers = category_counts[category_counts < threshold]
+        return outliers.index.tolist(), outliers.values.tolist()  # Return categories and their counts
+    
+    def detectDynamicOutliers(self):
+        allOutliers = {}
+
+        if pd.api.types.is_numeric_dtype(self.df[self.target_column]):
+            targetSkewness = self.df[self.target_column].skew()
+            if abs(targetSkewness) > 0.5:
+                targetOutliers = self.iqrOutliers(self.df[self.target_column])
+            else:
+                targetOutliers = self.sdOutliers(self.df[self.target_column])
+
+            if (len(targetOutliers) != 0):
+                allOutliers[self.target_column] = targetOutliers
+
+        else:
+            targetOuliers = self.detectCategoricalOutliers(target_column)
+            if (len(targetOutliers) != 0):
+                allOutliers[self.target_column] = targetOutliers
+
+        for column in self.df.columns:
+            if column == self.target_column:
+                continue
+            if pd.api.types.is_numeric_dtype(self.df[column]):
+                columnSkewness = self.df[column].skew()
+                if abs(columnSkewness) > 0.5:
+                    outliers = self.iqrOutliers(self.df[column])
+                else:
+                    outliers = self.sdOutliers(self.df[column])
+            elif (pd.api.types.is_object_dtype(self.df[column])):
+                outliers = self.detectCategoricalOutliers(column)
+                if (len(outliers) != 0):
+                    allOutliers[column] = outliers
+        return allOutliers
+    def handleOutliers(self, series, outliers, method="impute", lower_bound=None, upper_bound=None):
+    
+        if len(outliers) > 0:
+            if method == "remove":
+                # Option 1: Remove outliers
+                series = series[~series.isin(outliers)]
+
+            elif method == "cap":
+                # Option 2: Cap outliers to a lower or upper bound (e.g., IQR or SD bounds)
+                series = series.clip(lower=lower_bound, upper=upper_bound)
+
+            elif method == "impute":
+                # Option 3: Impute outliers with a statistic (e.g., mean, median)
+                median_value = series.median()
+                series[series.isin(outliers)] = median_value
+
+            else:
+                print("Invalid method specified. Please use 'remove', 'cap', or 'impute'.")
+        return series
+        
+    def automateOutliers(self):
+        allOutliers = self.detectAllOutliers()
+        if self.target_column in allOutliers:
+            targetOutliers = allOutliers[self.target_column]
+            self.df[self.target_column] = self.handleOutliers(self.df[self.target_column], targetOutliers)
+
+        for column in self.df.columns:
+            columnOutliers = allOutliers[column]
+            self.df[column] = self.handleOutliers(self.df[column], columnOutliers)
+            
+        return self.df
+      
+    def automateOutliersAndNormalisation(self, target = False, columnC = False):
+        allOutliers = self.detectAllOutliers()
+        
+        # Step 1: Handle outliers in the target column
+        if self.target_column in allOutliers:
+            targetOutliers = allOutliers[self.target_column]
+            self.df[self.target_column] = self.handleOutliers(self.df[self.target_column], targetOutliers)
+
+        # Step 2: Handle outliers in other columns
+        for column in self.df.columns:
+            if column != self.target_column and column in allOutliers:
+                columnOutliers = allOutliers[column]
+                self.df[column] = self.handleOutliers(self.df[column], columnOutliers)
+
+        # Step 3: Apply transformations to normalize the data
+        if (target and columnC):
+            self.apply_transformation()
+        elif (target):
+            self.apply_transformationJustTarget()
+        elif (columnC):
+            self.apply_transformation()
+        else:
+            self.apply_transformation()
+    
+     
+    def apply_transformationJustTarget(self):
+        data = self.df[self.target_column]  # Get the target column from the DataFrame
+        skewness = stats.skew(data)
+        
+        # Step 1: Check for negative or zero values and apply Yeo-Johnson if needed
+        if np.any(data <= 0):
+            pt = PowerTransformer(method='yeo-johnson')
+            self.df[self.target_column] = pt.fit_transform(data.values.reshape(-1, 1)).flatten()  # Apply Yeo-Johnson
+
+        # After Yeo-Johnson, re-check skewness
+        data = self.df[self.target_column]  # Re-get the target column after transformation
+        skewness = stats.skew(data)
+        
+        # Step 2: Apply transformations based on skewness
+        if skewness > 1:  # Positively skewed data
+            self.df[self.target_column] = np.log(data + 1)  # Log transformation (adding 1 to handle zero values)
+        elif skewness < -1:  # Negatively skewed data
+            # Box-Cox requires strictly positive values
+            self.df[self.target_column], _ = stats.boxcox(data[data > 0])  # Filter out non-positive values for Box-Cox
+        elif 0 < skewness <= 1:  # Moderately positively skewed data
+            self.df[self.target_column] = np.sqrt(data)  # Square root transformation
+        elif -1 <= skewness < 0:  # Moderately negatively skewed data
+            # Box-Cox transformation for moderately skewed negative data (requires positive values)
+            self.df[self.target_column], _ = stats.boxcox(data[data > 0])
+        # After transformation, re-check normality
+        return self.check_normality()
+        
+    def applyTransofmation(slef):
+        for column in self.df.columns:
+            data = self.df[column]
+            skewness = stats.skew(data)
+            # Apply Yeo-Johnson if there are negative or zero values
+            if np.any(data <= 0):
+                pt = PowerTransformer(method='yeo-johnson')
+                self.df[column] = pt.fit_transform(data.values.reshape(-1, 1)).flatten()
+            # After transformation, re-check skewness and apply appropriate transformations
+            data = self.df[column]
+            skewness = stats.skew(data)
+            # Apply transformations based on skewness
+            if skewness > 1:  # Positively skewed data
+                self.df[column] = np.log(data + 1)
+            elif skewness < -1:  # Negatively skewed data
+                self.df[column], _ = stats.boxcox(data[data > 0])
+            elif 0 < skewness <= 1:  # Moderately positively skewed
+                self.df[column] = np.sqrt(data)
+            elif -1 <= skewness < 0:  # Moderately negatively skewed
+                self.df[column], _ = stats.boxcox(data[data > 0])
+        return self.check_normality()
+        
+    def applyTransformationExceptTarget(self):
+    # Apply transformations to all columns, except the target column
+        for column in self.df.columns:
+            if column != self.target_column:  # Skip the target column
+                data = self.df[column]
+                skewness = stats.skew(data)
+
+            # Apply Yeo-Johnson if there are negative or zero values
+                if np.any(data <= 0):
+                    pt = PowerTransformer(method='yeo-johnson')
+                    self.df[column] = pt.fit_transform(data.values.reshape(-1, 1)).flatten()
+            # After transformation, re-check skewness and apply appropriate transformations
+                data = self.df[column]
+                skewness = stats.skew(data)
+            # Apply transformations based on skewness
+                if skewness > 1:  # Positively skewed data
+                    self.df[column] = np.log(data + 1)
+                elif skewness < -1:  # Negatively skewed data
+                    self.df[column], _ = stats.boxcox(data[data > 0])
+                elif 0 < skewness <= 1:  # Moderately positively skewed
+                    self.df[column] = np.sqrt(data)
+                elif -1 <= skewness < 0:  # Moderately negatively skewed
+                    self.df[column], _ = stats.boxcox(data[data > 0])
+        return self.check_normality()
+        
+    def check_normality(self):
+        for column in self.df.columns:
+            data = self.df[column]
+            normality_test = NormalityTest(data)
+            is_normal = normality_test.check_normality()
+            if is_normal:
+                continue
+            else:
+                return False
+        return True
+
+     
+    
+        
 
 
 def getVariability(df, column, threshold = 0.1):
