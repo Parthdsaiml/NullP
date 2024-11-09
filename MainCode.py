@@ -86,7 +86,7 @@ usefullColumns = [
 ]
 
 
-    class NullCheck:
+class NullCheck:
     def __init__(self, df):
         self.df = df.copy()  # Store a copy of the DataFrame
         self.droppingColumns = []  # Initialize the list of columns to drop
