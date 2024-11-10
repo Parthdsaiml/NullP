@@ -1,6 +1,6 @@
 | **Step**                          | **Get** | **Do** | **Visualize** | **GDV** |
 |------------------------------------|---------|--------|---------------|---------|
-| 1. **Remove duplicates**           | [x]     | [ ]    | [ ]           | [ ]     |
+| 1. **Remove duplicates**           | [x]     | [x]    | [ ]           | [ ]     |
 | 2. **Handle missing values**       | [x]     | [x]    | [x]           | [x]     |
 | 3. **Fix data types**             | [x]     | [x]    | [x]           | [x]     |
 | 4. **Handle outliers**             | [x]     | [_]    | [x]           | [ ]     |
