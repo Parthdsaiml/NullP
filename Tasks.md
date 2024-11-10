@@ -10,7 +10,7 @@
 | 8. **Convert categorical data**   | [ ]     | [ ]    | [ ]           | [ ]     |
 | 9. **Create new features**        | [ ]     | [ ]    | [ ]           | [ ]     |
 | 10. **Check for data leakage**    | [ ]     | [ ]    | [ ]           | [ ]     |
-
+`x = done, _ = in process`
 1. **Remove duplicates**: 
    - **What to do**: Identify and remove any repeated rows in the dataset that may result in biased analysis or modeling.
 
