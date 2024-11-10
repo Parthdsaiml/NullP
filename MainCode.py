@@ -759,8 +759,284 @@ class OutlierDetection:
      
     
         
+     
+    
+        
         
 
+
+
+        
+
+
+
+class FixDataTypes:
+    def __init__(self, df):
+        """Initialize with a DataFrame."""
+        self.df = df.copy()
+    def replace_strings_with_nan(self, column):
+        
+        if column in self.df.columns:
+            # Apply a lambda function to replace only string values with NaN
+            self.df[column] = self.df[column].apply(
+                lambda x: np.nan if isinstance(x, str) and not x.replace('.', '', 1).isdigit() else x
+            )
+        else:
+            print(f"Column '{column}' does not exist in the dataframe.")
+        return self.df
+    def getCompoundLinearity(self, dataFrame=None):
+        """
+        This method processes each column of the DataFrame and returns a list of tuples with column names 
+        and their respective linearity details (percentages of numeric, object, and null values).
+        """
+        # If no DataFrame is passed, use the one from the class instance
+        if dataFrame is None:
+            dataFrame = self.dataFrame
+        
+        compoundList = []  # List to hold the linearity data for each column
+        for column in dataFrame.columns:
+            linearity = self.getLinearity(dataFrame, column, False)
+            compoundList.append((column, linearity))  # Append the column name and its linearity data
+        
+        # Check and print the compound list to confirm it's correctly populated
+        return compoundList  # Return the list of tuples containing column names and their linearity data
+    
+    def getLinearity(self, dataFrame, column, get=True):
+        
+        """
+        This method computes the percentage of numeric, object, and null data for a given column.
+        """
+        isString = dataFrame[column].dtype == "object"
+        linearList = []
+        tColumn = pd.to_numeric(dataFrame[column], errors="coerce")
+        
+            # Count how many numeric values are in the column (non-NaN values)
+        numCount = tColumn.notna().sum()
+        objectCount = dataFrame[column].size - numCount
+        
+            # Calculate the percentages
+        numPercentage = numCount / dataFrame[column].size
+        objectPercentage = objectCount / dataFrame[column].size
+        nullCount = dataFrame[column].isnull().sum() / dataFrame[column].size
+        linearList = [numPercentage, objectPercentage, nullCount]
+        dataLinearList = ["num", numPercentage * 100, "object", objectPercentage * 100, "null", nullCount * 100]
+        
+
+        
+        return dataLinearList
+
+            
+
+  
+
+    def plotLinearityFromList(self, linearityData):
+        """
+        This method takes a list of tuples containing column names and their linearity data,
+        then generates a stacked bar chart based on the data structure.
+        """
+        # Check if the linearity data is empty or None
+        if linearityData is None or len(linearityData) == 0:
+            print("Error: The linearity data is empty or None!")  # Debug print
+            return
+        
+        # Convert the linearity data into a DataFrame for easy plotting
+        columns = []
+        num_percentage = []
+        object_percentage = []
+        null_percentage = []
+
+        for column, data in linearityData:
+            columns.append(column)
+            # Process the linearity data
+            for i in range(0, len(data), 2):
+                type_value = data[i]
+                value = data[i + 1]
+
+                if type_value == 'num':
+                    num_percentage.append(value)
+                elif type_value == 'object':
+                    object_percentage.append(value)
+                elif type_value == 'null':
+                    null_percentage.append(value)
+
+        # Create a DataFrame for plotting the stacked bar chart
+        linearity_df = pd.DataFrame({
+            'Column': columns,
+            'num': num_percentage,
+            'object': object_percentage,
+            'null': null_percentage
+        })
+
+        # Plot stacked bar chart
+        fig, ax = plt.subplots(figsize=(10, 6))
+        linearity_df.set_index('Column').plot(kind='bar', stacked=True, ax=ax, colormap='viridis')
+
+        ax.set_title('Data Linearity by Column')
+        ax.set_ylabel('Percentage (%)')
+        ax.set_xlabel('Columns')
+        ax.legend(title='Data Type')
+
+        plt.tight_layout()
+        plt.show()
+
+    def plotMissingValues(self, df, title="Missing Data Heatmap"):
+        # Plot heatmap for missing data visualization
+        plt.figure(figsize=(12, 6))
+        sns.heatmap(df.isnull(), cbar=False, cmap="viridis")
+        plt.title(title)
+        plt.show()
+       
+    def replace_numbers_with_unknown(self, column):
+       
+        if column in self.df.columns:
+            self.df[column] = self.df[column].apply(
+                lambda x: 'unknown' if (isinstance(x, (int, float)) or (isinstance(x, str) and x.replace('.', '', 1).isdigit())) else x
+            )
+        else:
+            print(f"Column '{column}' does not exist in the dataframe.")
+        return self.df
+    def getSNPercentage(self, dataFrame, column):
+        isString = dataFrame[column].dtype == "object"
+    
+        if isString:
+        # Convert to numeric (invalid parsing will be converted to NaN)
+            tColumn = pd.to_numeric(dataFrame[column], errors="coerce")
+        
+        # Count how many numeric values are in the column (non-NaN values)
+            numCount = tColumn.notna().sum()
+            objectCount = dataFrame[column].size - numCount
+        
+        # Calculate the percentages
+            numPercentage = numCount / dataFrame[column].size
+            objectPercentage = objectCount / dataFrame[column].size
+        
+            print(f"Numeric Percentage: {numPercentage}")
+            print(f"String Percentage: {objectPercentage}")
+
+    
+    def deepConverting(self, column):
+        listOfColumns = []
+    # Check if the column dtype is object (string)
+        isString = self.df[column].dtype == "object"
+    
+        if isString:
+        # Convert to numeric (invalid parsing will be converted to NaN)
+            tColumn = pd.to_numeric(self.df[column], errors="coerce")
+        
+        # Count how many numeric values are in the column (non-NaN values)
+            numCount = tColumn.notna().sum()
+            objectCount = self.df[column].size - numCount
+        
+        # Calculate the percentages
+            numPercentage = numCount / self.df[column].size
+            objectPercentage = objectCount / self.df[column].size
+        
+        # If numeric values are less than 10%, convert all numeric values to "unknown"
+            if objectPercentage < 0.1:
+            # Convert numeric values (in string format) to "unknown"
+                
+                self.df = self.replace_strings_with_nan(column)
+                
+
+        # If string values are less than 10%, convert all string values to NaN
+            elif numPercentage < 0.1:
+                self.df[column] = self.replace_numbers_with_unknown(column)
+                print(self.df.isnull().sum())
+            # Clean up column values if there are mixed values (str and numeric)
+            else:
+                listOfColumns.append(column)
+                
+        if (len(listOfColumns) != 0):
+            print(f"{listOfColumns}\nContains unorderd composition of numbers and objects")
+        
+        return self.df
+
+    def convert_to_number(self, value):
+        if isinstance(value, str):
+        # Try to convert string to float or int
+            try:
+                if '.' in value:
+                    return float(value)  # Convert to float
+                return int(value)  # Convert to integer
+            except ValueError:
+                return value  # Return original string if it cannot be converted
+        return value  # If it's already a number (int/float), leave it unchanged
+
+
+    def convert_column(self, column):
+        """Convert a specific column to numeric values where applicable."""
+        # Check if the column contains any non-numeric strings
+        has_non_numeric = self.df[column].apply(lambda x: isinstance(x, str) and not (x.isdigit() or self.is_float(x))).any()
+        if (self.df[column].dtype == "int64" or self.df[column].dtype == "float64"):
+            return self.df
+            
+        if has_non_numeric:
+            # If any non-numeric string is found, leave the column as is (don't convert to numeric)
+            self.df = self.deepConverting(column)
+            
+        else:
+            # Convert the column to numeric values (integers or floats)
+            self.df[column] = self.df[column].apply(self.convert_to_number)
+            
+        return self.df
+
+    def is_float(self, value):
+        """Helper function to check if a value can be converted to float."""
+        try:
+            float(value)
+            return True
+        except ValueError:
+            return False
+
+    def linearDataTypes(self):
+        """Apply column conversions across all columns."""
+        for column in self.df.columns:  # Iterate over each column in the DataFrame
+            self.df = self.convert_column(column) 
+        # Apply the conversion to each column
+        # self.df = self.processor.automateRemovingNullValues()
+        return self.df  # Return the updated DataFrame
+
+class NormalityTest:
+    def __init__(self, data):
+        self.data = data
+    
+    def check_p_value(self, p_value):
+        return p_value > 0.05
+    
+    def shapiro_wilk_test(self):
+        stat, p_value = stats.shapiro(self.data)
+        return self.check_p_value(p_value), p_value
+    
+    def dagostino_pearson_test(self):
+        stat, p_value = stats.normaltest(self.data)
+        return self.check_p_value(p_value), p_value
+    
+    def anderson_darling_test(self):
+        result = stats.anderson(self.data, dist='norm')
+        # Using 5% critical value for the rejection region
+        return result.statistic < result.critical_values[2], result.statistic
+    
+    def kolmogorov_smirnov_test(self):
+        stat, p_value = stats.kstest(self.data, 'norm', args=(np.mean(self.data), np.std(self.data)))
+        return self.check_p_value(p_value), p_value
+    
+    def jarque_bera_test(self):
+        stat, p_value = stats.jarque_bera(self.data)
+        return self.check_p_value(p_value), p_value
+    
+    def check_normality(self):
+        tests = [
+            ("Shapiro-Wilk Test", self.shapiro_wilk_test),
+            ("D'Agostino and Pearson's Test", self.dagostino_pearson_test),
+            ("Anderson-Darling Test", self.anderson_darling_test),
+            ("Kolmogorov-Smirnov Test", self.kolmogorov_smirnov_test),
+            ("Jarque-Bera Test", self.jarque_bera_test),
+        ]
+        for test_name, test_func in tests:
+            is_normal, p_value = test_func()
+            if is_normal:
+                return True
+        return False
 
 def getVariability(df, column, threshold = 0.1):
     if (column in usefullColumns):
@@ -776,9 +1052,6 @@ def getVariability(df, column, threshold = 0.1):
         print("range", rangeValue)
     else:
         print("Column is non-numeric, skipping variability check.")
-        
-    
-
 
 def checkVariablity(df, column, threshold=0.1):
     if (column in usefullColumns):
