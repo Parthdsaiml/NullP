@@ -86,11 +86,11 @@ usefullColumns = [
 ]
 
 
+
 class NullCheck:
     def __init__(self, df):
         self.df = df.copy()  # Store a copy of the DataFrame
         self.droppingColumns = []  # Initialize the list of columns to drop
-        self.outlier_detection = OutlierDetection(df)  # Initialize OutlierDetection class
 
         
     
@@ -102,37 +102,38 @@ class NullCheck:
             print("Null Count in Each Column:")
             print(self.df.isnull().sum())
         print("No Null Values found")
-        return None
+        
+    def isCategorical(self, column):
+        return self.df[column].dtype == 'object'
+
+    # Automate removing missing values with the threshold for missing data
     def automateRemovingNullValues(self, threshold=0.1):
         for column in self.df.columns:
-            # Skip large columns (more than 1 million entries)
+            # Skip columns that are too large
             if len(self.df[column]) > 1000000:
                 continue  # Need a better approach to handle very large columns
-        
-        # Handle categorical columns (replace NaNs with Mode)
-            if isCategorical(self.df, column):
+
+            # Handle categorical columns (replace NaNs with Mode)
+            if self.isCategorical(column):
                 self.replaceWithMode(column)
             else:
-            # Check if the column is numeric (not categorical)
+                # Check if the column is numeric (not categorical)
                 if pd.api.types.is_numeric_dtype(self.df[column]):
                     if self.skewCheck(self.df[column]):
-                    # If the column is skewed, check for outliers using IQR or SD
-                        iqr_outliers = self.outlier_detection.iqrOutliers(self.df[column])
-                        sd_outliers = self.outlier_detection.sdOutliers(self.df[column])
-
-                    # If outliers are detected, use Mode to replace missing values
-                        if iqr_outliers or sd_outliers:
-                            self.replaceWithMode(column)
-                        else:
-                        # Replace with Median for skewed columns without outliers
-                            self.replaceWithMedian(column)
+                        # If the column is skewed, replace NaNs with Median
+                        self.replaceWithMedian(column)
                     else:
-                    # For non-skewed numeric columns, replace with Mean
+                        # For non-skewed numeric columns, replace NaNs with Mean
                         self.replaceWithMean(column)
                 else:
-                # Handle non-numeric columns
-                    self.replaceWithMode(column)
+                    # Handle non-numeric columns
+                    if self.df[column].isnull().all():
+                        self.df[column].fillna('Unknown', inplace=True)
+                    else:
+                        self.replaceWithMode(column)
+        return self.df
 
+    # Check for skewness or kurtosis in a numeric column
     def skewCheck(self, column, skew_threshold=0.5, kurtosis_threshold=3.0):
         if not pd.api.types.is_numeric_dtype(column):
             return False
@@ -140,10 +141,7 @@ class NullCheck:
         kurt = column.kurtosis()
         skewed = abs(skewness) > skew_threshold
         heavy_tailed = abs(kurt) > kurtosis_threshold
-        if skewed or heavy_tailed:
-            return True
-        else:
-            return False
+        return skewed or heavy_tailed
 
     # Replace missing values with Mode (for categorical data)
     def replaceWithMode(self, column):
@@ -157,18 +155,13 @@ class NullCheck:
         self.df[column] = self.df[column].fillna(meanValue)
         return self.df
 
-    # Replace missing values with Median (for numeric data)
+    # Replace missing values with Median (for skewed numeric data)
     def replaceWithMedian(self, column):
         medianValue = self.df[column].median()
         self.df[column] = self.df[column].fillna(medianValue)
         return self.df
 
-    # KNN Imputation Method for replacing missing values
-    def knnMethodNullReplacement(self, n_neighbors=5):
-        imputer = KNNImputer(n_neighbors=n_neighbors)
-        imputed_data = imputer.fit_transform(self.df)
-        imputed_df = pd.DataFrame(imputed_data, columns=self.df.columns)
-        return imputed_df
+
 
     # Automate the process of handling missing values
         
@@ -221,8 +214,7 @@ class NullCheck:
                 print(f"Dropped columns with high null values: {self.droppingColumns}")
             else:
                 print("No columns were dropped.")
-
-            
+        
         return self.df
     def visualizeMissingData(self, heatmap_color='viridis', save_fig=False, fig_prefix='missing_data'):
         if self.df.empty:
@@ -289,6 +281,13 @@ def isCategorical(df, column_name, cardinality_threshold=0.1):
     
     # If none of the above, return False
     return False
+
+
+
+
+
+
+
 
 
 
@@ -759,6 +758,10 @@ class OutlierDetection:
      
     
         
+
+     
+    
+        
      
     
         
@@ -770,10 +773,12 @@ class OutlierDetection:
 
 
 
+
+
 class FixDataTypes:
     def __init__(self, df):
         """Initialize with a DataFrame."""
-        self.df = df.copy()
+        self.df = df
     def replace_strings_with_nan(self, column):
         
         if column in self.df.columns:
@@ -887,14 +892,35 @@ class FixDataTypes:
         plt.show()
        
     def replace_numbers_with_unknown(self, column):
-       
         if column in self.df.columns:
+        # Use .apply() to transform each value in the column to 'unknown' if it's a number
             self.df[column] = self.df[column].apply(
-                lambda x: 'unknown' if (isinstance(x, (int, float)) or (isinstance(x, str) and x.replace('.', '', 1).isdigit())) else x
+                lambda x: 'unknown' if self.is_number(x) else x
             )
         else:
             print(f"Column '{column}' does not exist in the dataframe.")
         return self.df
+
+    def is_number(self, x):
+        """Helper function to check if a value is a number (int, float, or numeric string)."""
+    # Handle NaN or None values
+        if pd.isna(x):
+            return False
+    
+    # Check if the value is a number or can be converted to a number
+        if isinstance(x, (int, float)): 
+            return True
+        elif isinstance(x, str):
+        # Handle cases like '3.14', '1e3', '-5.2', but exclude non-numeric strings
+            try:
+                float(x)  # Try to convert the string to a float
+                return True
+            except ValueError:
+                return False  # If it can't be converted to float, it's not a number
+    
+        return False
+
+
     def getSNPercentage(self, dataFrame, column):
         isString = dataFrame[column].dtype == "object"
     
@@ -932,16 +958,13 @@ class FixDataTypes:
             objectPercentage = objectCount / self.df[column].size
         
         # If numeric values are less than 10%, convert all numeric values to "unknown"
-            if objectPercentage < 0.1:
+            if objectPercentage < 0.1 and objectPercentage > 0.0:
             # Convert numeric values (in string format) to "unknown"
-                
                 self.df = self.replace_strings_with_nan(column)
-                
-
         # If string values are less than 10%, convert all string values to NaN
-            elif numPercentage < 0.1:
-                self.df[column] = self.replace_numbers_with_unknown(column)
-                print(self.df.isnull().sum())
+            elif numPercentage < 0.1 and numPercentage > 0.0:
+                print(column)
+                self.df = self.replace_numbers_with_unknown(column)
             # Clean up column values if there are mixed values (str and numeric)
             else:
                 listOfColumns.append(column)
@@ -996,47 +1019,158 @@ class FixDataTypes:
         # self.df = self.processor.automateRemovingNullValues()
         return self.df  # Return the updated DataFrame
 
+
+
+
+class Duplicated:
+    def __init__(self):
+        pass
+
+    def getDuplicates(self, df):
+        duplicateValues = {}  # Dictionary to hold duplicated values and their corresponding indexes
+        # Loop through each column to find duplicate values
+        for column in df.columns:
+            duplicateValues[column] = self.getColumnDuplicates(df, column)
+        return duplicateValues
+
+    def getColumnDuplicates(self, df, column):
+        # Find duplicated values in the column (including the first occurrence)
+        duplicates = df[df[column].duplicated(keep=False)]  # Keep all duplicates (including the first)
+        # Create a dictionary to hold the values and their corresponding indexes
+        value_indexes = {}
+        
+        for idx, value in duplicates[column].items():
+            if value not in value_indexes:
+                value_indexes[value] = []  # Create a list for each unique duplicated value
+            value_indexes[value].append(idx)  # Append the index to the list
+        
+        return value_indexes
+    def removeDuplicates(self, df):
+        df_cleaned = df[~df.duplicated(keep = "first")]
+        return df_cleaned
+    def replaceDuplicates(self, df):
+        for column in df.columns:
+            df = self.replaceColumnDuplicates(df, column)
+        return df
+
+    def replaceWithMode(self, df, column, duplicateList):
+        """Replace duplicates in the column with the mode."""
+        mode_value = df[column].mode()[0]  # Get the most frequent value (mode)
+        # Replace all the duplicates with the mode
+        for value, indices in duplicateList.items():
+            for idx in indices[1:]:  # Skip the first occurrence (keep it)
+                df.at[idx, column] = mode_value
+        return df
+
+    def replaceWithMedian(self, df, column, duplicateList):
+        """Replace duplicates in the column with the median."""
+        median_value = df[column].median()  # Get the median value
+        # Replace duplicates with the median value
+        for value, indices in duplicateList.items():
+            for idx in indices[1:]:
+                df.at[idx, column] = median_value
+        return df
+
+    def replaceWithMean(self, df, column, duplicateList):
+        """Replace duplicates in the column with the mean."""
+        mean_value = df[column].mean()  # Get the mean value
+        # Replace duplicates with the mean value
+        for value, indices in duplicateList.items():
+            for idx in indices[1:]:
+                df.at[idx, column] = mean_value
+        return df
+
+    def replaceColumnDuplicates(self, df, column):
+        # getting the list of duplicated values except first occurence
+        duplicateList = self.getColumnDuplicates(df, column)
+        linear = FixDataTypes(df)
+        linearData = linear.linearDataTypes()
+        filterD = NullCheck(df)
+        filterData = filterD.automateRemovingNullValues()
+        if (isCategorical(df, column)):
+            df = self.replaceWithMode(df, column, duplicateList)
+        elif (pd.api.types.is_numeric_dtype(df[column])):
+            if (filterD.skewCheck(df[column])):
+                df = self.replaceWithMedian(df, column, duplicateList)
+            else:
+                df = self.replaceWithMean(df, column, duplicateList)
+        else:
+            df = self.replaceWithMode(df, column, duplicateList)
+        
+        return df
+                   
+
+
 class NormalityTest:
-    def __init__(self, data):
-        self.data = data
-    
+    def __init__(self, df):
+        self.df = df
+        
     def check_p_value(self, p_value):
-        return p_value > 0.05
+        """
+        Helper function to return True or False based on the p-value.
+        """
+        return p_value > 0.05  # Normal if p > 0.05
     
-    def shapiro_wilk_test(self):
-        stat, p_value = stats.shapiro(self.data)
+    def shapiro_wilk_test(self, data):
+        """
+        Shapiro-Wilk Test for normality
+        """
+        stat, p_value = stats.shapiro(data)
+        return self.check_p_value(p_value), p_value
+
+    def dagostino_pearson_test(self, data):
+        """
+        D'Agostino and Pearson's Test for normality
+        """
+        stat, p_value = stats.normaltest(data)
+        return self.check_p_value(p_value), p_value
+
+    def kolmogorov_smirnov_test(self, data):
+        """
+        Kolmogorov-Smirnov Test for normality (comparing against normal distribution)
+        """
+        stat, p_value = stats.kstest(data, 'norm', args=(np.mean(data), np.std(data)))
         return self.check_p_value(p_value), p_value
     
-    def dagostino_pearson_test(self):
-        stat, p_value = stats.normaltest(self.data)
+    def jarque_bera_test(self, data):
+        """
+        Jarque-Bera Test for normality (based on skewness and kurtosis)
+        """
+        stat, p_value = stats.jarque_bera(data)
         return self.check_p_value(p_value), p_value
-    
-    def anderson_darling_test(self):
-        result = stats.anderson(self.data, dist='norm')
-        # Using 5% critical value for the rejection region
-        return result.statistic < result.critical_values[2], result.statistic
-    
-    def kolmogorov_smirnov_test(self):
-        stat, p_value = stats.kstest(self.data, 'norm', args=(np.mean(self.data), np.std(self.data)))
-        return self.check_p_value(p_value), p_value
-    
-    def jarque_bera_test(self):
-        stat, p_value = stats.jarque_bera(self.data)
-        return self.check_p_value(p_value), p_value
-    
+
     def check_normality(self):
-        tests = [
-            ("Shapiro-Wilk Test", self.shapiro_wilk_test),
-            ("D'Agostino and Pearson's Test", self.dagostino_pearson_test),
-            ("Anderson-Darling Test", self.anderson_darling_test),
-            ("Kolmogorov-Smirnov Test", self.kolmogorov_smirnov_test),
-            ("Jarque-Bera Test", self.jarque_bera_test),
-        ]
-        for test_name, test_func in tests:
-            is_normal, p_value = test_func()
-            if is_normal:
-                return True
-        return False
+        """
+        Main method to check normality for all numeric columns in the DataFrame.
+        """
+        normality_results = {}
+        
+        # Loop over each numerical column in the DataFrame
+        for column in self.df.select_dtypes(include=[np.number]).columns:
+            column_data = self.df[column].dropna()  # Drop missing values
+
+            if len(column_data) < 3:  # Skip columns with fewer than 3 data points
+                normality_results[column] = False
+                continue
+            
+            # Perform the normality tests
+            tests = [
+                ("Shapiro-Wilk Test", self.shapiro_wilk_test),
+                ("D'Agostino and Pearson's Test", self.dagostino_pearson_test),
+                ("Kolmogorov-Smirnov Test", self.kolmogorov_smirnov_test),
+                ("Jarque-Bera Test", self.jarque_bera_test)
+            ]
+            
+            for test_name, test_func in tests:
+                is_normal, p_value = test_func(column_data)
+                if not is_normal:
+                    normality_results[column] = False
+                    break
+            else:
+                normality_results[column] = True  # If all tests passed, it's normal
+        
+        return normality_results
+
 
 def getVariability(df, column, threshold = 0.1):
     if (column in usefullColumns):
