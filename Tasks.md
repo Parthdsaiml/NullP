@@ -1,4 +1,4 @@
-| **Step**                          | **Get** | **Do** | **Visualize** | **GDV** |
+| **Step**                           **Get** | **Do** | **Visualize** | **GDV** |
 |------------------------------------|---------|--------|---------------|---------|
 | 1. **Remove duplicates**           | [x]     | [x]    | [ ]           | [ ]     |
 | 2. **Handle missing values**       | [x]     | [x]    | [x]           | [x]     |
