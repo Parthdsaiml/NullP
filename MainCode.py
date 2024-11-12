@@ -1235,6 +1235,98 @@ class DataCheck:
         else:
             return ratio > thresholds["high"]
         
+
+class Plot:
+    def __init__(self):
+        pass
+    
+    def create_plot(self, dataFrame, plotDescription, plotType='All'):
+   
+    
+    # Set soothing color palette for plots
+        sns.set_palette("muted")
+    
+    # Adjust figure size for small plots
+        plt.figure(figsize=(6, 4))
+        if (plotDescription == "MixData"):
+            fd = FixDataTypes()
+            fd.showDuplicates(dataFrame)
+            return
+            
+
+        elif plotDescription == "Outliers":
+        # Outliers: Detect outliers using different plot types
+            if plotType == 'boxplot':
+            # Boxplot to detect outliers in the 'Value' column
+                sns.boxplot(x=dataFrame['Value'])
+                plt.title("Outliers - Boxplot for 'Value' Column")
+                plt.ylabel('Value')
+
+            elif plotType == 'scatter':
+            # Scatter plot to show outliers
+                plt.scatter(dataFrame.index, dataFrame['Value'], alpha=0.6, color='orange')
+                plt.title("Outliers - Scatter plot for 'Value' Column")
+                plt.xlabel('Index')
+                plt.ylabel('Value')
+
+            elif plotType == 'violin':
+            # Violin plot to show outliers and distribution
+                sns.violinplot(x=dataFrame['Value'])
+                plt.title("Outliers - Violin plot for 'Value' Column")
+                plt.ylabel('Value')
+    
+        elif plotDescription == "DuplicateData":
+        # DuplicateData: Show duplicate information using different plot types
+            if plotType == 'bar':
+            # Bar plot for duplicate counts
+                duplicate_count = dataFrame.duplicated().sum()
+                unique_count = len(dataFrame) - duplicate_count
+                plt.bar(['Duplicates', 'Unique'], [duplicate_count, unique_count], color=['lightcoral', 'lightgreen'])
+                plt.title("Duplicate Data - Count of Duplicates vs Unique")
+                plt.ylabel('Count')
+
+            elif plotType == 'pie':
+            # Pie chart to show proportion of duplicates vs unique
+                unique_values = dataFrame.duplicated().sum()
+                total_values = len(dataFrame)
+                plt.pie([unique_values, total_values - unique_values], labels=["Duplicates", "Unique"], autopct='%1.1f%%', startangle=90)
+                plt.title("Duplicate Data - Proportion of Duplicates vs Unique")
+
+            elif plotType == 'heatmap':
+            # Heatmap to visualize duplicates
+                duplicate_matrix = dataFrame.duplicated(keep=False).astype(int)
+                sns.heatmap(duplicate_matrix.values.reshape(-1, 1), cmap='Blues', cbar=False)
+                plt.title("Duplicate Data - Heatmap of Duplicates")
+
+        elif plotDescription == "NonLinearData":
+        # NonLinearData: Visualize non-linear relationships
+            if plotType == 'scatter':
+            # Scatter plot with potential non-linear data
+                sns.scatterplot(x=dataFrame['Value'], y=dataFrame['Score'], color='skyblue')
+                plt.title("Non-linear Data - Scatterplot of 'Value' vs 'Score'")
+                plt.xlabel('Value')
+                plt.ylabel('Score')
+
+            elif plotType == 'line':
+            # Line plot (non-linear regression line)
+                sns.regplot(x=dataFrame['Value'], y=dataFrame['Score'], scatter_kws={'color': 'skyblue'}, line_kws={'color': 'orange'})
+                plt.title("Non-linear Data - Line plot with Regression")
+                plt.xlabel('Value')
+                plt.ylabel('Score')
+
+        elif plotDescription == "All":
+        # Default plot: Histogram of 'Value' column (you can modify this to any default behavior you want)
+            sns.histplot(dataFrame['Value'], kde=True, bins=20, color='lightgreen')
+            plt.title("All Data - Histogram of 'Value' Column")
+            plt.xlabel('Value')
+            plt.ylabel('Frequency')
+
+        else:
+            print(f"Plot description '{plotDescription}' is not recognized.")
+    
+    # Display the plot
+        plt.tight_layout()
+        plt.show()
     
     
 class PreprocessData:
