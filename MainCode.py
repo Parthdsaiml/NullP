@@ -87,6 +87,7 @@ usefullColumns = [
 
 
 
+
 class NullCheck:
     def __init__(self, df):
         self.df = df.copy()  # Store a copy of the DataFrame
@@ -281,9 +282,6 @@ def isCategorical(df, column_name, cardinality_threshold=0.1):
     
     # If none of the above, return False
     return False
-
-
-
 
 
 
@@ -512,9 +510,9 @@ class OutlierDetection:
                 data = self.df[column].dropna()
 
                 # Skip columns with constant values (no variance)
-                if data.nunique() == 1:
+                if data.nunique() <= 2:
                     continue
-
+                print(column)
                 # Calculate IQR for the column
                 Q1 = data.quantile(0.25)
                 Q3 = data.quantile(0.75)
@@ -611,7 +609,7 @@ class OutlierDetection:
                 if (len(outliers) != 0):
                     allOutliers[column] = outliers
         return allOutliers
-    def handleOutliers(self, series, outliers, method="remove", lower_bound=None, upper_bound=None):
+    def handleOutliers(self, series, outliers, method="impute", lower_bound=None, upper_bound=None):
         if len(outliers) > 0:
             if method == "remove":
             # Option 1: Remove outliers
@@ -621,27 +619,29 @@ class OutlierDetection:
             # Option 2: Cap outliers to a lower or upper bound (e.g., IQR or SD bounds)
                 series = series.clip(lower=lower_bound, upper=upper_bound)
 
-            # elif method == "impute":
-            # # Option 3: Impute outliers with a statistic (e.g., mean, median)
-            #     median_value = series.median()
-            # # Use .loc to safely modify the original DataFrame or Series
-            #     series.loc[series.isin(outliers)] = median_value  # This avoids the SettingWithCopyWarning
+            elif method == "impute":
+            # Option 3: Impute outliers with a statistic (e.g., mean, median)
+                median_value = series.median()
+            # Use .loc to safely modify the original DataFrame or Series
+                series.loc[series.isin(outliers)] = median_value  # This avoids the SettingWithCopyWarning
 
             else:
                 print("Invalid method specified. Please use 'remove', 'cap', or 'impute'.")
         return series
 
         
-    def automateOutliers(self, way = "remove"):
+    def automateOutliers(self, way = "impute"):
         allOutliers = self.detectOutliers()
         if self.target_column in allOutliers:
-            targetOutliers = allOutliers[self.target_column]
-            self.df[self.target_column] = self.handleOutliers(self.df[self.target_column], targetOutliers, way)
+            if pd.api.types.is_numeric_dtype(self.df[self.target_column]):
+                targetOutliers = allOutliers[self.target_column]
+                self.df[self.target_column] = self.handleOutliers(self.df[self.target_column], targetOutliers, way)
 
         for column in self.df.columns:
             if pd.api.types.is_numeric_dtype(self.df[column]):
-                columnOutliers = allOutliers[column]
-                self.df[column] = self.handleOutliers(self.df[column], columnOutliers, way)
+                if column in allOutliers:
+                    columnOutliers = allOutliers[column]
+                    self.df[column] = self.handleOutliers(self.df[column], columnOutliers, way)
             
         return self.df
       
@@ -759,36 +759,22 @@ class OutlierDetection:
     
         
 
-     
-    
-        
-     
-    
-        
-        
-
-
-
-        
-
-
-
 
 
 class FixDataTypes:
-    def __init__(self, df):
+    def __init__(self):
         """Initialize with a DataFrame."""
-        self.df = df
-    def replace_strings_with_nan(self, column):
+        pass
+    def replace_strings_with_nan(self,dataFrame, column):
         
-        if column in self.df.columns:
+        if column in dataFrame.columns:
             # Apply a lambda function to replace only string values with NaN
-            self.df[column] = self.df[column].apply(
+            dataFrame[column] = dataFrame[column].apply(
                 lambda x: np.nan if isinstance(x, str) and not x.replace('.', '', 1).isdigit() else x
             )
         else:
             print(f"Column '{column}' does not exist in the dataframe.")
-        return self.df
+        return dataFrame
     def getCompoundLinearity(self, dataFrame=None):
         """
         This method processes each column of the DataFrame and returns a list of tuples with column names 
@@ -832,8 +818,11 @@ class FixDataTypes:
 
             
 
-  
-
+    
+    def showDuplicates(self, dataFrame):
+        linearList = self.getCompoundLinearity(dataFrame)
+        self.plotLinearityFromList(linearList)
+        
     def plotLinearityFromList(self, linearityData):
         """
         This method takes a list of tuples containing column names and their linearity data,
@@ -891,15 +880,15 @@ class FixDataTypes:
         plt.title(title)
         plt.show()
        
-    def replace_numbers_with_unknown(self, column):
-        if column in self.df.columns:
+    def replace_numbers_with_unknown(self, dataFrame, column):
+        if column in dataFrame.columns:
         # Use .apply() to transform each value in the column to 'unknown' if it's a number
-            self.df[column] = self.df[column].apply(
+            dataFrame[column] = dataFrame[column].apply(
                 lambda x: 'unknown' if self.is_number(x) else x
             )
         else:
             print(f"Column '{column}' does not exist in the dataframe.")
-        return self.df
+        return dataFrame
 
     def is_number(self, x):
         """Helper function to check if a value is a number (int, float, or numeric string)."""
@@ -940,31 +929,31 @@ class FixDataTypes:
             print(f"String Percentage: {objectPercentage}")
 
     
-    def deepConverting(self, column):
+    def deepConverting(self, dataFrame, column):
         listOfColumns = []
     # Check if the column dtype is object (string)
-        isString = self.df[column].dtype == "object"
+        isString = dataFrame[column].dtype == "object"
     
         if isString:
         # Convert to numeric (invalid parsing will be converted to NaN)
-            tColumn = pd.to_numeric(self.df[column], errors="coerce")
+            tColumn = pd.to_numeric(dataFrame[column], errors="coerce")
         
         # Count how many numeric values are in the column (non-NaN values)
             numCount = tColumn.notna().sum()
-            objectCount = self.df[column].size - numCount
+            objectCount = dataFrame[column].size - numCount
         
         # Calculate the percentages
-            numPercentage = numCount / self.df[column].size
-            objectPercentage = objectCount / self.df[column].size
+            numPercentage = numCount / dataFrame[column].size
+            objectPercentage = objectCount / dataFrame[column].size
         
         # If numeric values are less than 10%, convert all numeric values to "unknown"
             if objectPercentage < 0.1 and objectPercentage > 0.0:
             # Convert numeric values (in string format) to "unknown"
-                self.df = self.replace_strings_with_nan(column)
+                dataFrame = self.replace_strings_with_nan(dataFrame, column)
         # If string values are less than 10%, convert all string values to NaN
             elif numPercentage < 0.1 and numPercentage > 0.0:
                 print(column)
-                self.df = self.replace_numbers_with_unknown(column)
+                dataFrame = self.replace_numbers_with_unknown(dataFrame, column)
             # Clean up column values if there are mixed values (str and numeric)
             else:
                 listOfColumns.append(column)
@@ -972,7 +961,7 @@ class FixDataTypes:
         if (len(listOfColumns) != 0):
             print(f"{listOfColumns}\nContains unorderd composition of numbers and objects")
         
-        return self.df
+        return dataFrame
 
     def convert_to_number(self, value):
         if isinstance(value, str):
@@ -986,22 +975,22 @@ class FixDataTypes:
         return value  # If it's already a number (int/float), leave it unchanged
 
 
-    def convert_column(self, column):
+    def convert_column(self, dataFrame, column):
         """Convert a specific column to numeric values where applicable."""
         # Check if the column contains any non-numeric strings
-        has_non_numeric = self.df[column].apply(lambda x: isinstance(x, str) and not (x.isdigit() or self.is_float(x))).any()
-        if (self.df[column].dtype == "int64" or self.df[column].dtype == "float64"):
-            return self.df
+        has_non_numeric = dataFrame[column].apply(lambda x: isinstance(x, str) and not (x.isdigit() or self.is_float(x))).any()
+        if (dataFrame[column].dtype == "int64" or dataFrame[column].dtype == "float64"):
+            return dataFrame
             
         if has_non_numeric:
             # If any non-numeric string is found, leave the column as is (don't convert to numeric)
-            self.df = self.deepConverting(column)
+            dataFrame = self.deepConverting(dataFrame, column)
             
         else:
             # Convert the column to numeric values (integers or floats)
-            self.df[column] = self.df[column].apply(self.convert_to_number)
+            dataFrame[column] = dataFrame[column].apply(self.convert_to_number)
             
-        return self.df
+        return dataFrame
 
     def is_float(self, value):
         """Helper function to check if a value can be converted to float."""
@@ -1011,13 +1000,18 @@ class FixDataTypes:
         except ValueError:
             return False
 
-    def linearDataTypes(self):
+    def linearDataTypes(self, dataFrame, filterData = True):
         """Apply column conversions across all columns."""
-        for column in self.df.columns:  # Iterate over each column in the DataFrame
-            self.df = self.convert_column(column) 
+        for column in dataFrame.columns:  # Iterate over each column in the DataFrame
+            dataFrame = self.convert_column(dataFrame, column) 
         # Apply the conversion to each column
-        # self.df = self.processor.automateRemovingNullValues()
-        return self.df  # Return the updated DataFrame
+        # dataFrame = self.processor.automateRemovingNullValues()
+        if (filterData):
+            nullC = NullCheck(dataFrame)
+            dataFrame = nullC.automateRemovingNullValues()
+            
+        return dataFrame  # Return the updated DataFrame
+
 
 
 
@@ -1083,21 +1077,24 @@ class Duplicated:
     def replaceColumnDuplicates(self, df, column):
         # getting the list of duplicated values except first occurence
         duplicateList = self.getColumnDuplicates(df, column)
-        linear = FixDataTypes(df)
-        linearData = linear.linearDataTypes()
-        filterD = NullCheck(df)
-        filterData = filterD.automateRemovingNullValues()
-        if (isCategorical(df, column)):
-            df = self.replaceWithMode(df, column, duplicateList)
-        elif (pd.api.types.is_numeric_dtype(df[column])):
-            if (filterD.skewCheck(df[column])):
-                df = self.replaceWithMedian(df, column, duplicateList)
-            else:
-                df = self.replaceWithMean(df, column, duplicateList)
-        else:
-            df = self.replaceWithMode(df, column, duplicateList)
+        linear = FixDataTypes()
+        linearData = linear.linearDataTypes(df)
+        nullC = NullCheck(linearData)
         
-        return df
+        if (isCategorical(df, column)):
+            linearData = self.replaceWithMode(linearData, column, duplicateList)
+        elif (pd.api.types.is_numeric_dtype(linearData[column])):
+            if (nullC.skewCheck(linearData[column])):
+                linearData = self.replaceWithMedian(linearData, column, duplicateList)
+            else:
+                linearData = self.replaceWithMean(linearData, column, duplicateList)
+        else:
+            linearData = self.replaceWithMode(linearData, column, duplicateList)
+        
+        return linearData
+                   
+
+
                    
 
 
@@ -1171,94 +1168,94 @@ class NormalityTest:
         
         return normality_results
 
-
-def getVariability(df, column, threshold = 0.1):
-    if (column in usefullColumns):
-        return False
-    column = df[column]
-    
-    if pd.api.types.is_numeric_dtype(column):
-        variance = column.var()
-        uniqueCount = len(column.unique())
-        rangeValue = column.max() - column.min()
-        print("variance", variance)
-        print("unique", uniqueCount)
-        print("range", rangeValue)
-    else:
-        print("Column is non-numeric, skipping variability check.")
-
-def checkVariablity(df, column, threshold=0.1):
-    if (column in usefullColumns):
-        return False
-    # Check if the column is numeric
-    column = df[column]
-    if pd.api.types.is_numeric_dtype(column):
-        # Check for binary values (0 and 1)
-        if set(column.unique()).issubset({0, 1}):
+class DataCheck:
+    def __init__(self):
+        pass
+    def check_high_variation(self, df, column, variance_threshold=0.1):
+        if column not in df.columns:
+            print(f"Column '{column}' not found in the DataFrame.")
+            return False
+        column_data = df[column]
+        if pd.api.types.is_numeric_dtype(column_data):
+            std_dev = column_data.std()
+            if std_dev > variance_threshold:
+                return True
+            else:
+                return False
+        else:
             return False
         
-        variance = column.var()
-        uniqueCount = len(column.unique())
-        rangeValue = column.max() - column.min()
+    def checkVariablity(self, df, column, threshold=0.1):
+        if (column in usefullColumns):
+            return False
+    # Check if the column is numeric
+        column = df[column]
+        if pd.api.types.is_numeric_dtype(column):
+            # Check for binary values (0 and 1)
+            if set(column.unique()).issubset({0, 1}):
+                return False
         
-        if variance < threshold and uniqueCount / len(column) < threshold:
-            return True
-    else:
-        print("Column is non-numeric, skipping variability check.")
+            variance = column.var()
+            uniqueCount = len(column.unique())
+            rangeValue = column.max() - column.min()
         
-    return False
+            if variance < threshold and uniqueCount / len(column) < threshold:
+                return True
+        return False
 
-def checkHighCardinality(column, threshold = 0.1):
-    uniqueCount = column.nunique()
-    totalCount = len(column)
-    ratio = uniqueCount / totalCount
-    return ratio > threshold
+    def checkHighCardinality(self, column, threshold = 0.1):
+        uniqueCount = column.nunique()
+        totalCount = len(column)
+        ratio = uniqueCount / totalCount
+        return ratio > threshold
 
-def checkCategoricalCardinality(column, thresholds=None):
-    if column.empty:
-        raise ValueError("The input column is empty.")
+    def checkCategoricalCardinality(self, column, thresholds=None):
+        if column.empty:
+            raise ValueError("The input column is empty.")
 
-    unique_count = column.nunique()
-    total_count = len(column)
+        unique_count = column.nunique()
+        total_count = len(column)
 
-    if thresholds is None:
-        thresholds = {
-            "low": 0.7,
-            "medium": 0.3,
-            "high": 0.2,
-            "default": 0.3
-        }
+        if thresholds is None:
+            thresholds = {
+                "low": 0.7,
+                "medium": 0.3,
+                "high": 0.2,
+                "default": 0.3
+            }
 
-    ratio = unique_count / total_count
+        ratio = unique_count / total_count
 
-    if total_count < 200:
-        return ratio <= thresholds["low"]
-    elif 200 <= total_count <= 1000:
-        return ratio <= thresholds["default"]
-    elif 1000 < total_count < 10000:
-        return ratio > thresholds["medium"]
-    else:
-        return ratio > thresholds["high"]
+        if total_count < 200:
+            return ratio <= thresholds["low"]
+        elif 200 <= total_count <= 1000:
+            return ratio <= thresholds["default"]
+        elif 1000 < total_count < 10000:
+            return ratio > thresholds["medium"]
+        else:
+            return ratio > thresholds["high"]
         
     
     
-def findingIrrelevantColumns(dataFrame):
-    columnToRemove = []
-    index = 0
-    for column in dataFrame.columns:
-        if (column in unique_identifiers):
-            columnToRemove.append(column)
-        elif (checkVariablity(dataFrame[column])):
-            columnToRemove.append(column)
-        index += 1
-    return columnToRemove
-    
-        
+class PreprocessData:
+    def __init__(self):
+        pass
 
-def completeData(dataFrame):
-    print("Null Values")
-    print(nullCheck(dataFrame))
-    print("Outliers")
-    print(detectStandardOutliers(dataFrame))
-    print("Irrelevant Columns")
-    print(findingIrrelevantColumns(dataFrame))
+    def preprocessData(self, dataFrame, targetColumn,nullR = True, treatOutlier = False, showOutliers = False):
+        nullC = NullCheck(dataFrame)
+        dup = Duplicated()
+        fDtype = FixDataTypes()
+        # norm = NormalityTest(df)
+        df = fDtype.linearDataTypes(dataFrame, nullR)
+        # adf = dup.replaceDuplicates(df)
+        outlierD = OutlierDetection(df, targetColumn)
+        
+        if (treatOutlier):
+            df = outlierD.automateOutliers()
+        if (showOutliers):
+            outlierD.showOutliers()
+        
+        return df
+        
+        
+        
