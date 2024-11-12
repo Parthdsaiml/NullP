@@ -3,7 +3,7 @@
 | 1. **Remove duplicates**           | [x]     | [x]    | [ ]           | [ ]     |
 | 2. **Handle missing values**       | [x]     | [x]    | [x]           | [x]     |
 | 3. **Fix data types**             | [x]     | [x]    | [x]           | [x]     |
-| 4. **Handle outliers**             | [x]     | [_]    | [x]           | [ ]     |
+| 4. **Handle outliers**             | [x]     | [x]    | [x]           | [ ]     |
 | 5. **Remove irrelevant features**  | [ ]     | [ ]    | [ ]           | [ ]     |
 | 6. **Normalize or standardize**   | [ ]     | [ ]    | [ ]           | [ ]     |
 | 7. **Correct inconsistent data**  | [ ]     | [ ]    | [ ]           | [ ]     |
