@@ -5,7 +5,7 @@
 | 3. **Fix data types**             | [x]     | [x]    | [x]           | [x]     |
 | 4. **Handle outliers**             | [x]     | [x]    | [x]           | [x]     |
 | 5. **Remove irrelevant features**  | [x]     | [_]    | [x]           | [ ]     |
-| 6. **Normalize or standardize**   | [ ]     | [x]    | [ ]           | [ ]     |
+| 6. **Normalize or standardize**   | [_]     | [x]    | [_]           | [ ]     |
 | 7. **Correct inconsistent data**  | [ ]     | [ ]    | [ ]           | [ ]     |
 | 8. **Convert categorical data**   | [ ]     | [ ]    | [ ]           | [ ]     |
 | 9. **Create new features**        | [ ]     | [ ]    | [ ]           | [ ]     |
