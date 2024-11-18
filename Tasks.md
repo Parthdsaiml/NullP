@@ -4,8 +4,8 @@
 | 2. **Handle missing values**       | [x]     | [x]    | [x]           | [x]     |
 | 3. **Fix data types**             | [x]     | [x]    | [x]           | [x]     |
 | 4. **Handle outliers**             | [x]     | [x]    | [x]           | [x]     |
-| 5. **Remove irrelevant features**  | [x]     | [_]    | [x]           | [ ]     |
-| 6. **Normalize or standardize**   | [_]     | [x]    | [_]           | [ ]     |
+| 5. **Remove irrelevant features**  | [x]     | [_]    | [x]           | [x]     |
+| 6. **Normalize or standardize**   | [x]     | [x]    | [x]           | [x]     |
 | 7. **Correct inconsistent data**  | [ ]     | [ ]    | [ ]           | [ ]     |
 | 8. **Convert categorical data**   | [ ]     | [ ]    | [ ]           | [ ]     |
 | 9. **Create new features**        | [ ]     | [ ]    | [ ]           | [ ]     |
@@ -16,10 +16,10 @@
    - **What to do**: Identify and remove any repeated rows in the dataset that may result in biased analysis or modeling.
 
 2. **Handle missing values**: 
-   - **What to do**: Address missing or null data by either filling (imputation), removing, or otherwise handling gaps to ensure data integrity.
+   - **What to do**: Address missing or null data by either filling (imputation), removing, or handling gaps to ensure data integrity.
 
 3. **Fix data types**: 
-   - **What to do**: Ensure that each feature has the correct data type (e.g., integers, floats, categorical) to perform operations correctly.
+   - **What to do**: Ensure each feature has the correct data type (e.g., integers, floats, categorical) to perform operations correctly.
 
 4. **Handle outliers**: 
    - **What to do**: Identify and manage extreme values that may distort statistical analyses or modeling (either by removing, transforming, or capping them).
