@@ -7,7 +7,7 @@
 | 5. **Remove irrelevant features**  | [x]     | [_]    | [x]           | [x]     |
 | 6. **Normalize or standardize**   | [x]     | [x]    | [x]           | [x]     |
 | 7. **Correct inconsistent data**  | [ ]     | [ ]    | [ ]           | [ ]     |
-| 8. **Convert categorical data**   | [ ]     | [x]    | [ ]           | [ ]     |
+| 8. **Convert categorical data**   | [ ]     | [x]    | [x]           | [x]     |
 | 9. **Create new features**        | [ ]     | [ ]    | [ ]           | [ ]     |
 | 10. **Check for data leakage**    | [ ]     | [ ]    | [ ]           | [ ]     |
 
