@@ -4,7 +4,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import IsolationForest
 from sklearn.impute import KNNImputer
-df.info()
+from scipy import stats
+from sklearn.preprocessing import PowerTransformer
+import random
+import string
+from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import LabelEncoder
+
 unique_identifiers = [
         "RowNumber",
         "ID",
@@ -84,9 +90,6 @@ usefullColumns = [
     'Product Category',
     'Customer Segment'
 ]
-
-
-
 
 class NullCheck:
     def __init__(self, df):
@@ -283,14 +286,6 @@ def isCategorical(df, column_name, cardinality_threshold=0.1):
     # If none of the above, return False
     return False
 
-
-
-
-
-
-
-
-
 class OutlierDetection:
     def __init__(self, df, target_column):
         self.df = df.copy()  # Make a copy of the DataFrame to avoid modifying original data
@@ -391,24 +386,31 @@ class OutlierDetection:
         for column in self.df.columns:
         # Only plot numeric columns
             if self.df[column].dtype in ['float64', 'int64']:
+                sns.set_palette(["#FFA07A"])  # Light Salmon (light orange)
+
+                sns.set_style("whitegrid")  # Adds a soft white grid background
+
                 plt.figure(figsize=(5, 3))
 
                 if plot_type == "boxplot":
-                    sns.boxplot(y=self.df[column])
-                    plt.title(f"Box Plot of {column}")
-                    plt.ylabel(column)  # Fixed the typo here
+                    sns.boxplot(y=self.df[column], color="#FF8C00")  # Skyblue for a calming look
+                    plt.title(f"Box Plot of {column}", fontsize=14, fontweight='bold')
+                    plt.ylabel(column, fontsize=12)  # Fixed the typo here
                 elif plot_type == 'scatter':
-                    plt.scatter(self.df.index, self.df[column])
-                    plt.title(f'Scatter Plot of {column}')
-                    plt.ylabel(column)
-                    plt.xlabel('Index')
+                    plt.scatter(self.df.index, self.df[column], color='#FF8C00', alpha=0.7)  # Light coral for soothing color
+                    plt.title(f'Scatter Plot of {column}', fontsize=14, fontweight='bold')
+                    plt.ylabel(column, fontsize=12)
+                    plt.xlabel('Index', fontsize=12)
                 elif plot_type == 'histogram':
-                    sns.histplot(self.df[column], bins=30, kde=True)
-                    plt.title(f'Histogram of {column}')
-                    plt.xlabel(column)
-                    plt.ylabel('Frequency')
-                
+                    sns.histplot(self.df[column], bins=30, kde=True, color='#FF8C00')  # Lightseagreen for a calm histogram color
+                    plt.title(f'Histogram of {column}', fontsize=14, fontweight='bold')
+                    plt.xlabel(column, fontsize=12)
+                    plt.ylabel('Frequency', fontsize=12)
+        
+# Adjust font sizes for readability
+                plt.tight_layout()
                 plt.show()
+    
 
 
             
@@ -500,7 +502,7 @@ class OutlierDetection:
         return all_outliers
 
     
-    def detectOutliers(self, count=False):
+    def detectOutliers(self, count = True):
         all_outliers = {}
 
         # Iterate over all columns
@@ -512,7 +514,6 @@ class OutlierDetection:
                 # Skip columns with constant values (no variance)
                 if data.nunique() <= 2:
                     continue
-                print(column)
                 # Calculate IQR for the column
                 Q1 = data.quantile(0.25)
                 Q3 = data.quantile(0.75)
@@ -576,39 +577,86 @@ class OutlierDetection:
         threshold = len(column) * (threshold_percent / 100)
         outliers = category_counts[category_counts < threshold]
         return outliers.index.tolist(), outliers.values.tolist()  # Return categories and their counts
-    
-    def detectDynamicOutliers(self):
+        
+    def detectColumnOutliers(self, column, boolean=False):
+        outliers = {}
+
+        # Check if the specified column is numeric
+        if pd.api.types.is_numeric_dtype(self.df[column]):
+            columnSkewness = self.df[column].skew()
+        
+            # If skewness is high, use the IQR method
+            if abs(columnSkewness) > 0.5:
+                outliers[column] = self.iqrOutliers(self.df[column])
+            else:
+                # If skewness is low, use the standard deviation method
+                outliers[column] = self.sdOutliers(self.df[column])
+
+            # If `boolean` is True, return True if outliers exist, otherwise False
+            if boolean:
+                return len(outliers[column]) > 0  # True if outliers are detected, False otherwise
+
+        elif pd.api.types.is_object_dtype(self.df[column]):
+            # If the column is categorical, use a categorical outlier detection method
+            outliers[column] = self.detectCategoricalOutliers(column)
+        
+            # If `boolean` is True, return True if outliers exist, otherwise False
+            print(outliers[column])
+            if boolean:
+                return len(outliers[column]) > 0  # True if outliers are detected, False otherwise
+
+        # If `boolean` is False, return the outliers dictionary for that column
+            
+        return outliers
+
+    def detectDynamicOutliers(self, boolean=False):
         allOutliers = {}
 
+        # Check if the target column is numeric
         if pd.api.types.is_numeric_dtype(self.df[self.target_column]):
             targetSkewness = self.df[self.target_column].skew()
             if abs(targetSkewness) > 0.5:
+                # Use IQR for skewed data
                 targetOutliers = self.iqrOutliers(self.df[self.target_column])
             else:
+                # Use SD method for data that's not skewed
                 targetOutliers = self.sdOutliers(self.df[self.target_column])
 
-            if (len(targetOutliers) != 0):
+            if len(targetOutliers) != 0:
                 allOutliers[self.target_column] = targetOutliers
-
         else:
-            targetOuliers = self.detectCategoricalOutliers(target_column)
-            if (len(targetOutliers) != 0):
+            # Categorical data outlier detection
+            targetOutliers = self.detectCategoricalOutliers(self.target_column)
+            if len(targetOutliers) != 0:
                 allOutliers[self.target_column] = targetOutliers
 
+        # Iterate through all columns except the target column
         for column in self.df.columns:
             if column == self.target_column:
                 continue
+        
+            # For numeric columns
             if pd.api.types.is_numeric_dtype(self.df[column]):
                 columnSkewness = self.df[column].skew()
                 if abs(columnSkewness) > 0.5:
-                    outliers = self.iqrOutliers(self.df[column])
+                    outliers = self.iqrOutliers(self.df[column])  # Skewed data -> IQR
                 else:
-                    outliers = self.sdOutliers(self.df[column])
-            elif (pd.api.types.is_object_dtype(self.df[column])):
+                    outliers = self.sdOutliers(self.df[column])  # Normal data -> SD method
+            elif pd.api.types.is_object_dtype(self.df[column]):
+                # For categorical data, use a specific method
                 outliers = self.detectCategoricalOutliers(column)
-                if (len(outliers) != 0):
-                    allOutliers[column] = outliers
+        
+            # Only add columns with detected outliers
+            if len(outliers) != 0:
+                allOutliers[column] = outliers
+
+        # If `boolean` is True, return True if any outliers were detected, otherwise False
+        if boolean:
+            return len(allOutliers) > 0  # Return True if there are any outliers, otherwise False
+
+        # If `boolean` is False, return the dictionary of all detected outliers
         return allOutliers
+
     def handleOutliers(self, series, outliers, method="impute", lower_bound=None, upper_bound=None):
         if len(outliers) > 0:
             if method == "remove":
@@ -631,7 +679,7 @@ class OutlierDetection:
 
         
     def automateOutliers(self, way = "impute"):
-        allOutliers = self.detectOutliers()
+        allOutliers = self.detectOutliers(count = False)
         if self.target_column in allOutliers:
             if pd.api.types.is_numeric_dtype(self.df[self.target_column]):
                 targetOutliers = allOutliers[self.target_column]
@@ -754,13 +802,6 @@ class OutlierDetection:
             else:
                 return False
         return True
-
-     
-    
-        
-
-
-
 class FixDataTypes:
     def __init__(self):
         """Initialize with a DataFrame."""
@@ -958,8 +999,7 @@ class FixDataTypes:
             else:
                 listOfColumns.append(column)
                 
-        if (len(listOfColumns) != 0):
-            print(f"{listOfColumns}\nContains unorderd composition of numbers and objects")
+        
         
         return dataFrame
 
@@ -1013,9 +1053,6 @@ class FixDataTypes:
         return dataFrame  # Return the updated DataFrame
 
 
-
-
-
 class Duplicated:
     def __init__(self):
         pass
@@ -1039,64 +1076,125 @@ class Duplicated:
             value_indexes[value].append(idx)  # Append the index to the list
         
         return value_indexes
-    def removeDuplicates(self, df):
-        df_cleaned = df[~df.duplicated(keep = "first")]
-        return df_cleaned
+   
+
+
     def replaceDuplicates(self, df):
+        """Replace duplicates in all columns with appropriate values."""
         for column in df.columns:
             df = self.replaceColumnDuplicates(df, column)
         return df
 
-    def replaceWithMode(self, df, column, duplicateList):
-        """Replace duplicates in the column with the mode."""
-        mode_value = df[column].mode()[0]  # Get the most frequent value (mode)
-        # Replace all the duplicates with the mode
-        for value, indices in duplicateList.items():
-            for idx in indices[1:]:  # Skip the first occurrence (keep it)
-                df.at[idx, column] = mode_value
-        return df
-
-    def replaceWithMedian(self, df, column, duplicateList):
-        """Replace duplicates in the column with the median."""
-        median_value = df[column].median()  # Get the median value
-        # Replace duplicates with the median value
-        for value, indices in duplicateList.items():
-            for idx in indices[1:]:
-                df.at[idx, column] = median_value
-        return df
-
-    def replaceWithMean(self, df, column, duplicateList):
+    def replaceWithMean(self, df, column, duplicateIndices):
         """Replace duplicates in the column with the mean."""
         mean_value = df[column].mean()  # Get the mean value
-        # Replace duplicates with the mean value
-        for value, indices in duplicateList.items():
+    
+    # Iterate over the duplicate values and their indices
+        for value, indices in duplicateIndices.items():
+        # Ensure indices is a list (in case it's not)
+            if not isinstance(indices, list):
+                indices = [indices]  # Convert to list if it's not already
+        
+            # Skip the first occurrence (keep it), and replace the rest with mean
             for idx in indices[1:]:
-                df.at[idx, column] = mean_value
+                df.at[idx, column] = mean_value  # Use .at to set the value at a specific index
+    
         return df
 
+
+
     def replaceColumnDuplicates(self, df, column):
-        # getting the list of duplicated values except first occurence
-        duplicateList = self.getColumnDuplicates(df, column)
-        linear = FixDataTypes()
-        linearData = linear.linearDataTypes(df)
-        nullC = NullCheck(linearData)
+        """Identify duplicates in the column and replace them based on their data type."""
+        duplicateList = self.getColumnDuplicates(df, column)  # Get duplicate values and their indices
         
-        if (isCategorical(df, column)):
-            linearData = self.replaceWithMode(linearData, column, duplicateList)
-        elif (pd.api.types.is_numeric_dtype(linearData[column])):
-            if (nullC.skewCheck(linearData[column])):
-                linearData = self.replaceWithMedian(linearData, column, duplicateList)
+        # Handle categorical columns (use Mode)
+        if self.isCategorical(df, column):
+            return self.replaceWithMode(df, column, duplicateList)
+        
+        # Handle numerical columns (use Median or Mean depending on skew)
+        if pd.api.types.is_numeric_dtype(df[column]):
+            if self.isSkewed(df[column]):
+                return self.replaceWithMedian(df, column, duplicateList)
             else:
-                linearData = self.replaceWithMean(linearData, column, duplicateList)
-        else:
-            linearData = self.replaceWithMode(linearData, column, duplicateList)
+                return self.replaceWithMean(df, column, duplicateList)
+
+        # Default: For non-numeric, non-categorical (like dates, text), use Mode
+        return self.replaceWithMode(df, column, duplicateList)
+
+    def getColumnDuplicates(self, df, column):
+        """Get duplicate indices for each value in the column."""
+        # Find all duplicates, keeping all occurrences (not just the first)
+        duplicates = df[df[column].duplicated(keep=False)]
+        # Group the duplicates by their value, and return the indices in a list
+        duplicate_indices = duplicates.groupby(column).apply(lambda x: x.index.tolist()).to_dict()
+        return duplicate_indices
+
+
+    def isCategorical(self, df, column):
+        """Check if the column is categorical."""
+        return df[column].dtype == 'object' or pd.api.types.is_categorical_dtype(df[column])
+
+    def isSkewed(self, series):
+        """Check if the data is skewed using skewness metric."""
+        return series.skew() > 1  # A simple rule of thumb for positive skewness
+
+    # Additional methods for replacing with Mode and Median, not shown for brevity
+    def replaceWithMode(self, df, column, duplicateIndices):
+        """Replace duplicates in the column with the mode."""
+        mode_value = df[column].mode()[0]  # Get the most frequent value (mode)
+    
+        for value, indices in duplicateIndices.items():
+            if isinstance(indices, list) and len(indices) > 1:  # Check if indices are a list and have more than one duplicate
+                # Skip the first occurrence (keep it), and replace the rest with mode
+                for idx in indices[1:]:
+                    df.at[idx, column] = mode_value  # Use .at to set the value at a specific index
+        return df
+
+
+    def replaceWithMedian(self, df, column, duplicateIndices):
+        """Replace duplicates in the column with the median."""
+        median_value = df[column].median()  # Get the median value
+        # Iterate over the duplicate values and their indices
+        for value, indices in duplicateIndices.items():
+            if isinstance(indices, list) and len(indices) > 1:  # Check if indices are a list and have more than one duplicate
+            
+            # Skip the first occurrence (keep it), and replace the rest with median
+                for idx in indices[1:]:
+                    df.at[idx, column] = median_value  # Use .at to set the value at a specific index
+        return df
+    def plotRowDuplicatesBarChart(self, df):
+        """Generate a bar chart showing duplicates vs unique values for each row."""
         
-        return linearData
-                   
+        # Initialize lists to hold the counts for each row
+        duplicate_counts = []
+        unique_counts = []
 
+        # Iterate over each row to count duplicates and unique values
+        for idx, row in df.iterrows():
+            value_counts = row.value_counts()  # Count how many times each value appears in the row
+            
+            # Count duplicates (values that appear more than once)
+            duplicates = sum(value_counts > 1)
+            unique = len(value_counts) - duplicates  # Unique values are those that appear exactly once
+            
+            duplicate_counts.append(duplicates)
+            unique_counts.append(unique)
+        
+        # Create a DataFrame to hold the counts for easy plotting
+        counts_df = pd.DataFrame({
+            'Duplicates': duplicate_counts,
+            'Unique': unique_counts
+        })
 
-                   
-
+        # Plot the bar chart
+        counts_df.plot(kind='bar', stacked=True, figsize=(10, 6), color=['lightblue', 'lightgreen'])
+        plt.title('Duplicates vs Unique Values Per Row')
+        plt.xlabel('Row Index')
+        plt.ylabel('Count')
+        plt.xticks(rotation=0)
+        plt.legend(title='Count Type')
+        plt.tight_layout()
+        plt.show()
 
 class NormalityTest:
     def __init__(self, df):
@@ -1167,7 +1265,6 @@ class NormalityTest:
                 normality_results[column] = True  # If all tests passed, it's normal
         
         return normality_results
-
 class DataCheck:
     def __init__(self):
         pass
@@ -1235,105 +1332,613 @@ class DataCheck:
         else:
             return ratio > thresholds["high"]
         
+    
+    
+ 
+class IrrelvantColumns:
+    def __init__(self):
+        pass
+
+    def constantValue(self, column):
+        return column.nunique() == 1
+
+    def check_high_cardinality_low_frequency(self, df, column, cardinality_threshold=0.1, frequency_threshold=0.05):
+        # Calculate the number of distinct values
+        num_distinct_values = df[column].nunique()
+        num_rows = len(df)
+    
+        # High cardinality check: More distinct values than the threshold percentage of total rows
+        if num_distinct_values / num_rows < cardinality_threshold:
+            return False
+    
+        # Check frequency of values
+        value_counts = df[column].value_counts(normalize=True)
+    
+        # Check if a significant portion of the values have a low frequency (below the threshold)
+        low_frequency_count = sum(value_counts[value_counts < frequency_threshold])
+    
+        # High cardinality and low frequency condition
+        if low_frequency_count > 0.5:  # At least 50% of the distinct values are low frequency
+            return True
+    
+        return False
+
+    def is_highly_skewed(self, df, column, threshold=1.0):
+        # Check if the column exists in the DataFrame
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' does not exist in the DataFrame.")
+    
+        # Ensure the column is numerical
+        if not pd.api.types.is_numeric_dtype(df[column]):
+            raise ValueError(f"Column '{column}' is not a numerical column.")
+    
+        # Calculate skewness of the column, dropping any NaN values
+        skewness_value = df[column].skew()  # .dropna() handles missing values
+    
+        # Return True if the absolute skewness is greater than the threshold, otherwise False
+        return abs(skewness_value) > threshold
+
+    def find_identical_columns_optimized(self, df):
+        identical_column_pairs = []
+        column_hashes = {}
+
+        for col in df.columns:
+            column_hash = hash(tuple(df[col].values))
+        
+            if column_hash in column_hashes:
+                identical_column_pairs.append((column_hashes[column_hash], col))
+            else:
+                column_hashes[column_hash] = col
+
+        return identical_column_pairs
+
+    def check_sparse_data(self, df, column, threshold=0.9):
+        """Check if a column has too many unique values compared to the total number of rows."""
+        num_distinct_values = df[column].nunique()
+        num_rows = len(df)
+    
+        # If the proportion of unique values exceeds the threshold, flag as sparse
+        if num_distinct_values / num_rows > threshold:
+            return True
+    
+        return False
+
+    def removeColumns(self, df, targetColumn, threshold=1.0, cardinality_threshold=0.1, frequency_threshold=0.05, sparse_threshold=0.9):
+        removalList = {
+            'constant_values': [],
+            'high_cardinality_low_frequency': [],
+            'highly_skewed': [],
+            'useless_columns': [],
+            'identical_columns': [],
+            'sparse_columns': [],  # Added for sparse columns
+            "Outliers": []
+        }
+
+        # Identify identical columns first
+        removalList['identical_columns'] = self.find_identical_columns_optimized(df)
+
+        # Assuming OutlierDetection is defined elsewhere in your code
+        ot = OutlierDetection(df, targetColumn)
+        oList = ot.detectOutliers()
+        removalList["Outliers"].append(oList)
+
+        # Loop through each column and classify it based on the criteria
+        for column in df.columns:
+            if self.constantValue(df[column]):
+                removalList['constant_values'].append(column)
+
+            if self.check_high_cardinality_low_frequency(df, column, cardinality_threshold, frequency_threshold):
+                removalList['high_cardinality_low_frequency'].append(column)
+
+            if pd.api.types.is_numeric_dtype(df[column]):
+                if self.is_highly_skewed(df, column, threshold):
+                    removalList['highly_skewed'].append(column)
+
+            # Check for sparse columns
+            if self.check_sparse_data(df, column, sparse_threshold):
+                removalList['sparse_columns'].append(column)
+
+            # Assuming `unique_identifiers` is defined elsewhere, and its logic is correct
+            if column in unique_identifiers:
+                removalList['useless_columns'].append(column)
+
+        return removalList
+  
+    
+        
+
+
+
+
 
 class Plot:
     def __init__(self):
         pass
     
-    def create_plot(self, dataFrame, plotDescription, plotType='All'):
-   
-    
-    # Set soothing color palette for plots
-        sns.set_palette("muted")
-    
-    # Adjust figure size for small plots
-        plt.figure(figsize=(6, 4))
-        if (plotDescription == "MixData"):
+    def showPlot(self, dataFrame,targetColumn, plotDescription, plotType):
+        if (plotDescription == "null"):
+            nullC = NullCheck(dataFrame)
+            nullC.visualizeMissingData()
+        elif (plotDescription == "outliers"):
+            od = OutlierDetection(dataFrame, targetColumn)
+            
+            if (plotType == "scatter"):
+                od.showOutliers(plot_type = "scatter")
+            elif (plotType == "histogram"):
+                od.showOutliers(plot_type = "histogram")
+            else:
+                od.showOutliers()
+                
+        elif (plotDescription == "linearity"):
             fd = FixDataTypes()
             fd.showDuplicates(dataFrame)
-            return
-            
-
-        elif plotDescription == "Outliers":
-        # Outliers: Detect outliers using different plot types
-            if plotType == 'boxplot':
-            # Boxplot to detect outliers in the 'Value' column
-                sns.boxplot(x=dataFrame['Value'])
-                plt.title("Outliers - Boxplot for 'Value' Column")
-                plt.ylabel('Value')
-
-            elif plotType == 'scatter':
-            # Scatter plot to show outliers
-                plt.scatter(dataFrame.index, dataFrame['Value'], alpha=0.6, color='orange')
-                plt.title("Outliers - Scatter plot for 'Value' Column")
-                plt.xlabel('Index')
-                plt.ylabel('Value')
-
-            elif plotType == 'violin':
-            # Violin plot to show outliers and distribution
-                sns.violinplot(x=dataFrame['Value'])
-                plt.title("Outliers - Violin plot for 'Value' Column")
-                plt.ylabel('Value')
-    
-        elif plotDescription == "DuplicateData":
-        # DuplicateData: Show duplicate information using different plot types
-            if plotType == 'bar':
-            # Bar plot for duplicate counts
-                duplicate_count = dataFrame.duplicated().sum()
-                unique_count = len(dataFrame) - duplicate_count
-                plt.bar(['Duplicates', 'Unique'], [duplicate_count, unique_count], color=['lightcoral', 'lightgreen'])
-                plt.title("Duplicate Data - Count of Duplicates vs Unique")
-                plt.ylabel('Count')
-
-            elif plotType == 'pie':
-            # Pie chart to show proportion of duplicates vs unique
-                unique_values = dataFrame.duplicated().sum()
-                total_values = len(dataFrame)
-                plt.pie([unique_values, total_values - unique_values], labels=["Duplicates", "Unique"], autopct='%1.1f%%', startangle=90)
-                plt.title("Duplicate Data - Proportion of Duplicates vs Unique")
-
-            elif plotType == 'heatmap':
-            # Heatmap to visualize duplicates
-                duplicate_matrix = dataFrame.duplicated(keep=False).astype(int)
-                sns.heatmap(duplicate_matrix.values.reshape(-1, 1), cmap='Blues', cbar=False)
-                plt.title("Duplicate Data - Heatmap of Duplicates")
-
-        elif plotDescription == "NonLinearData":
-        # NonLinearData: Visualize non-linear relationships
-            if plotType == 'scatter':
-            # Scatter plot with potential non-linear data
-                sns.scatterplot(x=dataFrame['Value'], y=dataFrame['Score'], color='skyblue')
-                plt.title("Non-linear Data - Scatterplot of 'Value' vs 'Score'")
-                plt.xlabel('Value')
-                plt.ylabel('Score')
-
-            elif plotType == 'line':
-            # Line plot (non-linear regression line)
-                sns.regplot(x=dataFrame['Value'], y=dataFrame['Score'], scatter_kws={'color': 'skyblue'}, line_kws={'color': 'orange'})
-                plt.title("Non-linear Data - Line plot with Regression")
-                plt.xlabel('Value')
-                plt.ylabel('Score')
-
-        elif plotDescription == "All":
-        # Default plot: Histogram of 'Value' column (you can modify this to any default behavior you want)
-            sns.histplot(dataFrame['Value'], kde=True, bins=20, color='lightgreen')
-            plt.title("All Data - Histogram of 'Value' Column")
-            plt.xlabel('Value')
-            plt.ylabel('Frequency')
-
+        elif (plotDescription == "duplicates"):
+            dup = Duplicated()
+            dup.plotRowDuplicatesBarChart(dataFrame)
         else:
-            print(f"Plot description '{plotDescription}' is not recognized.")
+            print("Working")
+            
+        
+            
+                    
+                    
+                    
+                    
+        
+            
     
-    # Display the plot
+class Normalization:
+    def __init__(self):
+        pass
+        
+    def minMax(self, df, column):
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not found in the DataFrame.")
+        min_value = df[column].min()
+        max_value = df[column].max()
+        df[column] = (df[column] - min_value) / (max_value - min_value)
+        return df
+
+    def zScore(self, df, column):
+       
+        mean = df[column].mean()
+        std = df[column].std()
+
+        df[column] = (df[column] - mean) / std
+        return df
+
+    def robustScaling(self, df, column):
+       
+        scaler = RobustScaler()
+
+        df[column] = scaler.fit_transform(df[[column]])
+        return df
+
+    def logTransformation(self, df, column):
+    
+        df[column] = np.log1p(df[column])  # log(x + 1)
+        return df
+
+    def decimalScaling(self, df, column):
+      
+        max_abs_value = df[column].abs().max()
+        scaling_factor = 10 ** np.ceil(np.log10(max_abs_value))
+
+        df[column] = df[column] / scaling_factor
+        return df
+
+    def unitVector(self, df, column):
+        
+        norm = np.linalg.norm(df[column])
+
+        if norm != 0:
+            df[column] = df[column] / nrm
+        return df
+    def sd_based_outlier_detection(self, df, column, threshold=3):
+        mean = df[column].mean()
+        std_dev = df[column].std()
+        upper_bound = mean + threshold * std_dev
+        lower_bound = mean - threshold * std_dev
+
+        outliers = (df[column] > upper_bound) | (df[column] < lower_bound)
+        return outliers
+    
+    # def automateNormalization(self, df):
+    #     # Check for and remove null values
+    #     nullC = NullCheck(df)
+    #     df = nullC.automateRemovingNullValues()
+
+    #     # Identify numeric columns
+    #     numeric_columns = df.select_dtypes(include=[np.number]).columns
+    #     if len(numeric_columns) == 0:
+    #         raise ValueError("No numeric columns found for normalization.")
+    #     if df.empty:
+    #         raise ValueError("The DataFrame is empty.")
+
+    #     # Iterate through each numeric column for normalization
+    #     for column in numeric_columns:
+    #         print(f"Processing column: {column}")
+
+    #         # Detect outliers using the SD method
+    #         outliers = self.sd_based_outlier_detection(df, column)
+    
+    #         # Apply different normalization techniques based on conditions
+    #         if outliers.any():  # If there are any outliers detected
+    #             print(f"Outliers detected in {column}. Applying Robust Scaling.")
+    #             df = self.robustScaling(df, column)
+
+    #         elif df[column].std() != 0 and abs(df[column].skew()) <= 0.5:
+    #             # Apply Z-Score Normalization for nearly normal distributions
+    #             print(f"{column} is approximately normal. Applying Z-Score Normalization.")
+    #             df = self.zScore(df, column)
+
+    #         elif df[column].skew() > 0.8:  # Adjusted threshold for heavily skewed columns
+    #         # Apply Log Transformation for heavily skewed, positive values
+    #             if (df[column] > 0).all():
+    #                 print(f"{column} is heavily skewed. Applying Log Transformation.")
+    #                 df = self.logTransformation(df, column)
+    #             else:
+    #                 print(f"Skipping Log Transformation for {column} due to non-positive values.")
+
+    #         elif df[column].min() >= 0 and df[column].max() <= 100:
+    #             # Apply Min-Max Scaling if values are between 0 and 100
+    #             print(f"Applying Min-Max Scaling to {column}.")
+    #             df = self.minMax(df, column)
+
+    #         else:
+    #             # Apply Decimal Scaling as a fallback for non-skewed, non-outlying columns
+    #             print(f"Applying Decimal Scaling to {column}.")
+    #             df = self.decimalScaling(df, column)
+
+    #     # Return the modified DataFrame after applying appropriate normalization techniques
+    #     return df
+
+
+    def getAllNormality(self, df):
+        # Initialize an empty dictionary to store the results
+        columnList = {}
+
+        # Loop through each column in the DataFrame
+        for column in df.columns:
+            # Ensure the column contains numeric data
+            if pd.api.types.is_numeric_dtype(df[column]):
+                # Call the getNormality function for each column
+                normality_results = self.getNormality(df, column)
+                # Add the normality results to the dictionary
+                columnList[column] = normality_results
+            else:
+                # For non-numeric columns, we can skip or handle differently
+                columnList[column] = {'normality_score': 'N/A', 'skewness': 'N/A', 'kurtosis': 'N/A', 'shapiro_p_value': 'N/A'}
+
+        # Return the dictionary containing the normality information for all columns
+        normality_df = pd.DataFrame(columnList).T  # Transpose to get columns as rows
+        normality_df = normality_df.reset_index()  # Reset index for better readability
+        normality_df.rename(columns={'index': 'Column'}, inplace=True)  # Rename index column to 'Column'
+
+        # Return the DataFrame for better readability
+        return normality_df
+    def showNormalityGraphs(self, df):
+        """Display histograms and Q-Q plots for each numeric column in the DataFrame."""
+        # Determine number of numeric columns
+        numeric_columns = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+        num_columns = len(numeric_columns)
+
+        # Calculate grid size (number of rows and columns) for subplots
+        num_rows = int(np.ceil(num_columns / 3))  # Ensure enough rows to fit all columns (3 columns per row)
+        num_cols = 3  # Fix the number of columns to 3
+
+        # Plotting setup for histograms
+        plt.figure(figsize=(14, 5 * num_rows))  # Adjust figure height based on the number of rows
+
+        # Loop through each numeric column to show the normality plots (Histograms)
+        for idx, column in enumerate(numeric_columns):
+            # Create subplots for each column (histogram)
+            plt.subplot(num_rows, num_cols, idx + 1)
+            
+            # Plot Histogram with KDE (Kernel Density Estimate)
+            sns.histplot(df[column], kde=True, bins=20)
+            plt.title(f"Histogram for {column}")
+
+        # Show all histograms
         plt.tight_layout()
         plt.show()
+
+        # Plotting setup for Q-Q plots
+        plt.figure(figsize=(14, 5 * num_rows))  # Adjust figure height for Q-Q plots
+
+        # Loop through each numeric column to show the Q-Q plot
+        for idx, column in enumerate(numeric_columns):
+            plt.subplot(num_rows, num_cols, idx + 1)
+            stats.probplot(df[column], dist="norm", plot=plt)
+            plt.title(f"Q-Q plot for {column}")
+        
+        # Show all Q-Q plots
+        plt.tight_layout()
+        plt.show()
+
+    def showNormality(self, df):
+        normality_df = self.getAllNormality(df)
+
+        # Determine number of numeric columns
+        numeric_columns = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+        num_columns = len(numeric_columns)
+
+        # Calculate grid size (number of rows and columns) for subplots
+        num_rows = int(np.ceil(num_columns / 3))  # Ensure enough rows to fit all columns (3 columns per row)
+        num_cols = 3  # Fix the number of columns to 3
+
+        # Plotting setup
+        plt.figure(figsize=(14, 5 * num_rows))  # Adjust figure height based on the number of rows
+
+        # Loop through each numeric column to show the normality plots
+        for idx, column in enumerate(numeric_columns):
+            # Create subplots for each column
+            plt.subplot(num_rows, num_cols, idx + 1)
+        
+            # Plot Histogram with KDE
+            sns.histplot(df[column], kde=True, bins=20)
+            plt.title(f"Histogram for {column}")
+        
+            # Display Skewness, Kurtosis, and p-value on the plot
+            normality_results = normality_df[normality_df['Column'] == column].iloc[0]
+            skew = normality_results['skewness']
+            kurt = normality_results['kurtosis']
+            p_value = normality_results['shapiro_p_value']
+            plt.xlabel(f"Skewness: {skew:.2f}, Kurtosis: {kurt:.2f}, p-value: {p_value:.3f}")
+
+        # Show all histograms
+        plt.tight_layout()
+        plt.show()
+
+        # Q-Q plot for each numeric column to visually assess normality
+        plt.figure(figsize=(14, 5 * num_rows))
+        for idx, column in enumerate(numeric_columns):
+            plt.subplot(num_rows, num_cols, idx + 1)
+            stats.probplot(df[column], dist="norm", plot=plt)
+            plt.title(f"Q-Q plot for {column}")
     
+        # Show all Q-Q plots
+        plt.tight_layout()
+        plt.show()
+
+        
+        
+    def getNormality(self, df, column):
+        # Calculate skewness and kurtosis
+        skewness = df[column].skew()
+        kurtosis = df[column].kurtosis()
     
+        # Perform the Shapiro-Wilk test for normality
+        stat, p_value = stats.shapiro(df[column])
+    
+        # Now, determine how much the column deviates from normality
+        normality_score = 0
+    
+        # Skewness: near 0 is ideal
+        if abs(skewness) > 0.5:
+            normality_score += abs(skewness)  # Penalize for skewness
+    
+        # Kurtosis: near 3 is ideal for a normal distribution
+        if abs(kurtosis - 3) > 1:
+            normality_score += abs(kurtosis - 3)  # Penalize for deviation from normal kurtosis
+    
+        # Shapiro-Wilk test: p-value > 0.05 means normal, less means non-normal
+        if p_value < 0.05:
+            normality_score += 1  # Increase score for non-normality
+    
+        # Return the normality score along with statistical results
+        return {
+            'skewness': skewness,
+            'kurtosis': kurtosis,
+            'shapiro_p_value': p_value,
+            'normality_score': normality_score
+        }
+
+    
+
+    def manualNormalization(self, df, column, way=None):
+        # Check if 'way' is provided
+        if way is None:
+            raise ValueError("Argument 'way' is required. Please specify the scaling method.")
+    
+        # Apply the appropriate transformation based on the 'way' argument
+        if way == "minmax":
+            print(f"Applying Min-Max Scaling to {column}")
+            df = self.minMax(df, column)
+        
+        elif way == "zscore":
+            print(f"Applying Z-Score Normalization to {column}")
+            df = self.zScore(df, column)
+        
+        elif way == "robustscaling":
+            print(f"Applying Robust Scaling to {column}")
+            df = self.robustScaling(df, column)
+        
+        elif way == "logtransforming":
+            print(f"Applying Log Transformation to {column}")
+            df = self.logTransformation(df, column)
+            
+        elif way == "decimalScaling":
+            print(f"Applying Decimal Scaling to {column}")
+            df = self.decimalScaling(df, column)
+        
+        elif way == "unitvector":
+            print(f"Applying Unit Vector Scaling to {column}")
+            df = self.unitVector(df, column)
+        
+        else:
+            raise ValueError(f"Invalid method '{way}' specified. Please choose from: 'minmax', 'zscore', 'robustscaling', 'logtransforming', 'decimalScaling', or 'unitvector'.")
+    
+        return df
+
+        
+            
+
+# class InconData:
+#     def __init__(self):
+#         pass
+
+#     # Check if column contains only boolean values or valid boolean-like strings
+#     def checkBool(self, column):
+#         valid_booleans = ['True', 'False', 'yes', 'no', '1', '0', 'y', 'n']
+        
+#         # Check if column is strictly boolean
+#         if column.isin([True, False]).all():
+#             return True
+        
+#         # Check if column contains only valid boolean-like strings
+#         if column.astype(str).isin(valid_booleans).all():
+#             return True
+        
+#         return False
+    
+#     # Check if column contains only numeric values (int, float)
+#     def checkNumeric(self, column):
+#         try:
+#             pd.to_numeric(column, errors='raise')
+#             return True
+#         except ValueError:
+#             return False
+    
+#     # Check if column is categorical or contains string values
+#     def checkCategorical(self, column):
+#         return column.dtype == 'object' or pd.api.types.is_categorical_dtype(column)
+    
+#     # Check if column can be converted to datetime
+#     def checkDateTime(self, column):
+#         try:
+#             pd.to_datetime(column, errors='raise')
+#             return True
+#         except Exception:
+#             return False
+    
+#     # Check if the length of the values in a column is consistent
+#     def checkLength(self, column):
+#         length = column.apply(lambda x: len(str(x))).mode().iloc[0]
+#         if column.apply(lambda x: len(str(x)) != length).any():
+#             return False
+#         return True
+    
+#     # Consistency check for all columns in the DataFrame
+#     def consistentData(self, df):
+#         # Prepare results
+#         results = []
+        
+#         for column in df.columns:
+#             column_info = {'column': column}
+
+#             # Check type of column and apply appropriate check
+#             if self.checkBool(df[column]):
+#                 column_info['type'] = 'bool'
+#                 column_info['consistent'] = True
+#             elif self.checkNumeric(df[column]):
+#                 column_info['type'] = 'numeric'
+#                 column_info['consistent'] = True
+#             elif self.checkDateTime(df[column]):
+#                 column_info['type'] = 'datetime'
+#                 column_info['consistent'] = True
+#             elif self.checkCategorical(df[column]):
+#                 column_info['type'] = 'categorical'
+#                 column_info['consistent'] = True
+#             else:
+#                 column_info['type'] = 'unknown'
+#                 column_info['consistent'] = False
+            
+#             # Check for length consistency
+#             column_info['length_consistent'] = self.checkLength(df[column])
+
+#             results.append(column_info)
+        
+#         # Convert results into a DataFrame for better visualization
+#         consistency_df = pd.DataFrame(results)
+#         return consistency_df
+   
+    
+
+class CategoricalEncoder:
+    def __init__(self):
+       pass
+
+    def convert_categorical_column(self, df, column, encoding_type="onehot"):
+       
+        if encoding_type == "onehot":
+            # One-Hot Encoding using pd.get_dummies
+            return pd.get_dummies(df, columns=[column], prefix=[column])
+        
+        elif encoding_type == "label":
+            # Label Encoding using LabelEncoder
+            le = LabelEncoder()
+            df[column + '_Label'] = le.fit_transform(df[column])
+            return df
+        
+        else:
+            raise ValueError("encoding_type must be 'onehot' or 'label'")
+
+
+    def plot_categorical_distribution(self,df, column, encoding_type="onehot"):
+        
+        # Original distribution (before encoding)
+        plt.figure(figsize=(10, 5))
+        plt.subplot(1, 3, 1)
+        sns.countplot(data=df, x=column)
+        plt.title(f"Original {column} Distribution")
+        
+        # Encoding the column
+        if encoding_type == "label":
+            # Perform Label Encoding
+            df_encoded = self.convert_categorical_column(df, column, encoding_type="label")
+            encoded_column = column + "_Label"
+            plt.subplot(1, 3, 2)
+            sns.countplot(data=df_encoded, x=encoded_column)
+            plt.title(f"Label Encoded {column} Distribution")
+        
+        elif encoding_type == "onehot":
+            # Perform One-Hot Encoding
+            df_encoded = self.convert_categorical_column(df, column, encoding_type="onehot")
+            onehot_columns = [col for col in df_encoded.columns if column in col]
+            # Sum of each one-hot encoded column
+            onehot_sums = df_encoded[onehot_columns].sum()
+            plt.subplot(1, 3, 2)
+            sns.barplot(x=onehot_sums.index, y=onehot_sums.values)
+            plt.title(f"One-Hot Encoded {column} Distribution")
+
+        plt.tight_layout()
+        plt.show()
+
 class PreprocessData:
     def __init__(self):
         pass
+    def describeDifference(self, original_df, result_df):
+        # Get describe() for both original and result DataFrames
+        original_desc = original_df.describe().T  # Transpose for easy comparison
+        result_desc = result_df.describe().T
 
-    def preprocessData(self, dataFrame, targetColumn,nullR = True, treatOutlier = False, showOutliers = False):
+        # Align the DataFrames (matching columns, filling missing with NaN)
+        combined_desc = pd.concat([original_desc, result_desc], axis=1, keys=['Original', 'Result'])
+
+        # Replace NaN with 'null' in case columns are missing
+        combined_desc = combined_desc.fillna('null')
+
+        # Calculate the difference between original and result
+        # This creates a DataFrame where each statistic is subtracted row-wise
+        difference = original_desc.subtract(result_desc, fill_value=0)
+    
+        # Now add the difference to combined_desc by concatenating along the columns axis
+        # The difference DataFrame will also be transposed so that it's aligned correctly
+        combined_desc = pd.concat([combined_desc, difference.rename(columns={'Original': 'Difference'})], axis=1)
+
+        return combined_desc
+
+    def preprocessDataFunctionUse(self, dataFrame):
+        fDtype = FixDataTypes()
+        df = fDtype.linearDataTypes(dataFrame, True)
+        return df
+        
+        
+        
+        
+    def preprocessData(self, dataFrame, targetColumn, nullR = True, treatOutlier = False, showOutliers = False, replace = False):
+        print(dataFrame.describe())
         nullC = NullCheck(dataFrame)
         dup = Duplicated()
         fDtype = FixDataTypes()
@@ -1346,8 +1951,23 @@ class PreprocessData:
             df = outlierD.automateOutliers()
         if (showOutliers):
             outlierD.showOutliers()
+        if (replace):
+            df = dup.replaceDuplicates(df)
+        # diff_df = self.describeDifference(dataFrame, df)
+        # print("Differences between original and resulting DataFrame:")
+        # print(diff_df)
+        print(df.describe())
+        irrelvantColumnList = IrrelvantColumns()
+        iList = irrelvantColumnList.removeColumns(df, targetColumn)
+        print(iList)
         
         return df
         
         
         
+    
+    
+        
+
+
+
